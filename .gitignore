@@ -1,0 +1,26 @@
+# 비밀값
+.env
+*.key
+
+# 런타임 데이터
+data/
+images/
+output/
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# 에디터 · OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Playwright 브라우저 프로필
+profiles/
