@@ -334,7 +334,7 @@ RawDetail:   RawListing + options[](sku_id, name_raw, price, image), images[], a
 | DB | SQLite (SQLAlchemy) | 단일 PC, 단일 사용자 |
 | 스케줄러 | APScheduler | 별도 데몬 불필요 |
 | 텔레그램 | python-telegram-bot | 인라인 버튼 콜백 |
-| LLM | 제공자 선택형 어댑터: Claude (기본, `claude-opus-5-5`) / Gemini / OpenAI | 언어 감지·검색어 생성·매칭 판정·재질/품목/카테고리 정규화·브랜드 로고 감지·한국어화·LLM 추출 어댑터. 모든 호출은 공통 인터페이스(`complete`, `complete_json`, `vision_json`)를 거치고 추정 비용을 기록 |
+| LLM | 제공자 선택형 어댑터: OpenAI (기본, `gpt-5`) / Claude (`claude-opus-5-5`) / Gemini | 언어 감지·검색어 생성·매칭 판정·재질/품목/카테고리 정규화·브랜드 로고 감지·한국어화·LLM 추출 어댑터. 모든 호출은 공통 인터페이스(`complete`, `complete_json`, `vision_json`)를 거치고 추정 비용을 기록 |
 | 이미지 생성 | 제공자 선택형 어댑터: Gemini / OpenAI / (Claude는 이미지 생성 미지원) | 모드 C의 배경·연출컷에만 사용. 상세페이지 본문은 HTML 템플릿 렌더링 |
 | 이미지 스토리지 | Supabase Storage (공개 버킷) | 엑셀 일괄등록용 공개 URL. `.env`의 SUPABASE_URL / SUPABASE_SERVICE_KEY / SUPABASE_BUCKET |
 | 이미지 유사도 | CLIP 임베딩 (로컬) | 네이버 결과와 소스 이미지 비교, 소스 간 동일 상품 묶기 |

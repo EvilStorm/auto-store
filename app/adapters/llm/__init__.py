@@ -7,7 +7,7 @@ from .base import LLM, LLMNotConfigured
 
 
 def get_llm() -> LLM:
-    p = (settings.llm_provider or "claude").lower()
+    p = (settings.llm_provider or "openai").lower()
     if p == "claude":
         from .claude import ClaudeLLM
 

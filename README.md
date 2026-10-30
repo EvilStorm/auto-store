@@ -140,7 +140,7 @@ Python 3.12 · Playwright · FastAPI + Jinja2 + HTMX · SQLite(SQLAlchemy) · AP
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python -m playwright install chromium
-copy .env.example .env      # ANTHROPIC_API_KEY, NAVER_CLIENT_ID/SECRET 채우기
+copy .env.example .env      # OPENAI_API_KEY, NAVER_CLIENT_ID/SECRET 채우기 (LLM_PROVIDER 기본 openai)
 
 # 2) 실행
 .venv\Scripts\python -m app.instant https://detail.1688.com/offer/XXXXXXXX.html
@@ -154,7 +154,7 @@ copy .env.example .env      # ANTHROPIC_API_KEY, NAVER_CLIENT_ID/SECRET 채우�
 - 환율은 수출입은행 API(키 있을 때) → 네이버 금융(2026-10 현재 페이지가 JS 앱으로 바뀌어 보통 실패) → open.er-api.com(키 없음, 실제로 쓰이는 경로) 순으로 자동 수집하고 `data/exchange_rates.json`에 48시간 캐시한다.
 - 아직 미연결: 데이터랩 수요 신호, 동일 이미지 판매자 수, 리뷰 수 보조 크롤링, 텔레그램 입구. 카드에는 "미연결"로 표시된다.
 
-코드 구조는 DESIGN.md 8장을 따른다: `app/sources/fetch.py`(페이지 스냅샷) → `app/pipeline/extract.py`(LLM 추출·정규화) → `app/pipeline/match.py`(네이버 매칭) → `app/pipeline/cost.py`(원가·점수) → `app/pipeline/card.py`. LLM 제공자는 `app/adapters/llm/` 에서 선택한다(현재 Claude 구현, Gemini·OpenAI는 자리만).
+코드 구조는 DESIGN.md 8장을 따른다: `app/sources/fetch.py`(페이지 스냅샷) → `app/pipeline/extract.py`(LLM 추출·정규화) → `app/pipeline/match.py`(네이버 매칭) → `app/pipeline/cost.py`(원가·점수) → `app/pipeline/card.py`. LLM 제공자는 `app/adapters/llm/` 에서 `LLM_PROVIDER`로 선택한다(OpenAI 기본·Claude 구현 완료, Gemini는 자리만). 모델은 `LLM_MODEL`로 바꾼다.
 
 ## 9. 작업 메모 (세션 연속성용)
 

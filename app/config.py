@@ -28,7 +28,7 @@ def _s(key: str, default: str = "") -> str:
 @dataclass
 class Settings:
     # AI
-    llm_provider: str = field(default_factory=lambda: _s("LLM_PROVIDER", "claude"))
+    llm_provider: str = field(default_factory=lambda: _s("LLM_PROVIDER", "openai"))
     llm_model: str = field(default_factory=lambda: _s("LLM_MODEL", ""))
     anthropic_api_key: str = field(default_factory=lambda: _s("ANTHROPIC_API_KEY"))
     google_ai_api_key: str = field(default_factory=lambda: _s("GOOGLE_AI_API_KEY"))
