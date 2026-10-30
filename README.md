@@ -133,14 +133,14 @@ Python 3.12 · Playwright · FastAPI + Jinja2 + HTMX · SQLite(SQLAlchemy) · AP
 
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (2026-10-30)
 
-구현 2단계의 첫 조각. 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 쇼핑 API로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 `data/analyses/` 에 이력으로 남는다.
+구현 2단계의 첫 조각. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 `data/analyses/` 에 이력으로 남는다.
 
 ```bash
 # 1) 준비 (최초 1회)
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python -m playwright install chromium
-copy .env.example .env      # OPENAI_API_KEY, NAVER_CLIENT_ID/SECRET 채우기 (LLM_PROVIDER 기본 openai)
+copy .env.example .env      # OPENAI_API_KEY 만 채우면 된다 (LLM_PROVIDER 기본 openai, 네이버 키 불필요)
 
 # 2) 실행
 .venv\Scripts\python -m app.instant https://detail.1688.com/offer/XXXXXXXX.html
