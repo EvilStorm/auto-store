@@ -12,11 +12,11 @@ const solid=(h,o)=>{const p={type:'SOLID',color:hex(h)};if(o!==undefined)p.opaci
 function text(str,o={}){const {size=14,style='Regular',color='#1F1F1F',w,align='LEFT',lh}=o;const t=figma.createText();t.fontName=F(style);t.characters=str;t.fontSize=size;t.fills=[solid(color)];if(lh)t.lineHeight={unit:'PIXELS',value:lh};t.textAlignHorizontal=align;if(w){t.resize(w,10);t.textAutoResize='HEIGHT';}return t;}
 function label(parent,str,x,y,o={}){const t=text(str,o);t.x=x;t.y=y;parent.appendChild(t);return t;}
 function box(parent,o){const {x,y,w,h,fill='#FFFFFF',stroke='#D9D9D9',sw=1,r=8,name='box'}=o;const f=figma.createFrame();f.name=name;f.resize(w,h);f.x=x;f.y=y;f.fills=fill?[solid(fill)]:[];f.strokes=stroke?[solid(stroke)]:[];f.strokeWeight=sw;f.cornerRadius=r;f.clipsContent=false;parent.appendChild(f);return f;}
-const S=figma.createSection();S.name='05 관리자 웹 와이어프레임 (v2)';S.x=0;S.y=2400;S.resizeWithoutConstraints(15700,1200);S.fills=[solid('#F7F7F5')];page.appendChild(S);
+const S=figma.createSection();S.name='05 관리자 웹 와이어프레임 (v2)';S.x=0;S.y=2400;S.resizeWithoutConstraints(17260,1200);S.fills=[solid('#F7F7F5')];page.appendChild(S);
 label(S,'05 관리자 웹 와이어프레임 (1440 × 1000, 로우파이) · v2 멀티 소스',40,32,{size:28,style:'Bold'});
-label(S,'좌측 메뉴 11개 · 모든 목록에 소스 축 · 환율은 자동 수집(조회만) · 배송 프로필은 경로별 · AI 제공자·예산·스케줄·스토리지는 시스템 설정 · 설정 변경은 다음 배치부터 적용',40,78,{size:14,color:'#555555'});
+label(S,'좌측 메뉴 12개 · 모든 목록에 소스 축 · 환율은 자동 수집(조회만) · 배송 프로필은 경로별 · 주문 관리(체크리스트 · 실제 원가 · 월 손익) · 설정 변경은 다음 배치부터 적용',40,78,{size:14,color:'#555555'});
 const SX=i=>80+i*1560;
-const MENU=['대시보드','소스 관리','카테고리 매핑','수집 카테고리','제외 규칙','비용 설정','매칭 설정','콘텐츠 설정','상품 목록','실행 로그','시스템 설정'];
+const MENU=['대시보드','소스 관리','카테고리 매핑','수집 카테고리','제외 규칙','비용 설정','매칭 설정','콘텐츠 설정','상품 목록','주문 관리','실행 로그','시스템 설정'];
 function screen(x,title,active,isNew){label(S,title+(isNew?'  (v2 신규)':''),x,124,{size:16,style:'Bold',color:isNew?'#C05621':'#333333'});const f=box(S,{x,y:156,w:1440,h:1000,fill:'#F7F8FA',stroke:'#B0B0B0',r:0,name:'화면 · '+title});f.clipsContent=true;const sb=box(f,{x:0,y:0,w:220,h:1000,fill:'#1F2933',stroke:null,r:0,name:'사이드바'});label(sb,'auto-store 관리자',20,22,{size:16,style:'Bold',color:'#FFFFFF'});MENU.forEach((m,i)=>{const y=80+i*40;const on=Array.isArray(active)?active.includes(i):i===active;if(on)box(sb,{x:12,y:y-8,w:196,h:34,fill:'#2B6CB0',stroke:null,r:6,name:'active'});label(sb,m,28,y,{size:14,style:on?'Bold':'Regular',color:on?'#FFFFFF':'#CBD2D9'});});label(sb,'admin · 로그아웃',20,960,{size:12,color:'#9AA5B1'});const tb=box(f,{x:220,y:0,w:1220,h:56,fill:'#FFFFFF',stroke:'#E0E0E0',r:0,name:'상단바'});label(tb,title,24,16,{size:18,style:'Bold'});label(tb,'마지막 배치  2026-10-29 02:00 · 소스 5개 중 4개 정상 · 환율 09:00 갱신 · 다음 알림 08:00',640,19,{size:12,color:'#666666'});return f;}
 function table(parent,x,y,cols,rows,rowH=38){const w=cols.reduce((a,c)=>a+c[1],0);const t=box(parent,{x,y,w,h:rowH*(rows.length+1),fill:'#FFFFFF',stroke:'#D0D0D0',r:6,name:'표'});t.clipsContent=true;const hd=box(t,{x:0,y:0,w,h:rowH,fill:'#F2F4F7',stroke:null,r:0,name:'머리글'});let cx=0;cols.forEach(c=>{label(hd,c[0],cx+12,11,{size:12,style:'Bold',color:'#444444'});cx+=c[1];});rows.forEach((r,ri)=>{const ry=rowH*(ri+1);if(ri>0)box(t,{x:0,y:ry,w,h:1,fill:'#E8E8E8',stroke:null,r:0,name:'구분선'});let cx=0;r.forEach((cell,ci)=>{if(cell==='ON'||cell==='OFF')toggle(t,cx+12,ry+9,cell==='ON');else if(cell==='[img]')box(t,{x:cx+12,y:ry+5,w:28,h:28,fill:'#E2E8F0',stroke:null,r:4,name:'썸네일'});else if(typeof cell==='string'&&cell.startsWith('[')&&cell.endsWith(']'))label(t,cell.slice(1,-1),cx+12,ry+11,{size:12,style:'Medium',color:'#2B6CB0'});else if(typeof cell==='string'&&cell.startsWith('!'))label(t,cell.slice(1),cx+12,ry+11,{size:12,style:'Medium',color:'#C05621'});else if(typeof cell==='string'&&cell.startsWith('+'))label(t,cell.slice(1),cx+12,ry+11,{size:12,style:'Medium',color:'#2F855A'});else label(t,String(cell),cx+12,ry+11,{size:12,color:'#222222'});cx+=cols[ci][1];});});return t;}
 function input(parent,x,y,w,lab,val,o={}){label(parent,lab,x,y,{size:12,color:'#555555'});const b=box(parent,{x,y:y+20,w,h:36,fill:o.ro?'#F2F4F7':'#FFFFFF',stroke:'#B8B8B8',r:6,name:'입력 '+lab});label(b,val,12,9,{size:13,color:o.ph?'#999999':'#222222'});if(o.unit)label(b,o.unit,w-44,9,{size:12,color:'#777777'});if(o.select)label(b,'▾',w-24,8,{size:13,color:'#555555'});return b;}
@@ -131,16 +131,17 @@ p=panel(f,244,80,380,400,'환율 (자동 수집 · 수동 입력 없음)');
 table(p,16,44,[['통화',70],['원화',90],['출처',110],['갱신',78]],[['CNY','193.20','수출입은행 API','10-29 09:00'],['JPY (100)','915.40','수출입은행 API','10-29 09:00'],['USD','1,392.00','수출입은행 API','10-29 09:00']],36);
 btn(p,16,200,'지금 갱신','ghost',120);label(p,'다음 자동 갱신 10-30 01:50 (배치 직전)',148,210,{size:11,color:'#777777'});
 note(p,16,250,348,'출처 우선순위: 1 한국수출입은행 환율 API → 2 네이버 금융 환율 페이지 크롤링 → 3 마지막 성공값. 48시간 넘게 갱신 실패면 원가에 rate_stale 플래그가 붙고 알림 카드에 경고가 표시된다.',94);
-p=panel(f,244,500,380,430,'통관 · 수수료 · 기준');
+p=panel(f,244,500,380,440,'통관 · 수수료 · 기준');
 input(p,16,44,170,'목록통관 한도','150',{unit:'USD'});input(p,206,44,158,'통관 경고 구간','130',{unit:'USD'});
 input(p,16,114,170,'관세율 (한도 초과 시)','8',{unit:'%'});input(p,206,114,158,'부가세율','10',{unit:'%'});
 input(p,16,184,170,'네이버 판매 수수료','5.5',{unit:'%'});input(p,206,184,158,'결제 수수료','2.0',{unit:'%'});
 input(p,16,254,170,'목표 마진율 (알림 기준)','30',{unit:'%'});input(p,206,254,158,'소스 기본 수집 상한','300',{unit:'건'});
-note(p,16,330,348,'마진율 = (국내 비교가 − 총원가) ÷ 국내 비교가. 총원가 = 소스가×최소수량 + 현지 배송 + 배대지(배송 프로필) + 관부가세 + 수수료.',76);
+input(p,16,324,170,'환차손 완충','2',{unit:'%'});input(p,206,324,158,'거절 이력 제외 기간','90',{unit:'일'});
+note(p,16,394,348,'총원가 = 소스가×최소수량 + 현지 배송 + 대리구매 수수료(배송 프로필) + 배대지 + 관부가세 + 수수료 + 환차손 완충.',40);
 p=panel(f,644,80,380,850,'배송 프로필 (경로별)');
 tab(p,16,40,'중국 → 배대지 A',true);tab(p,166,40,'일본 → 배대지 B',false);btn(p,316,40,'+','ghost',48);
 input(p,16,90,170,'통화','CNY',{select:true});input(p,206,90,158,'현지 배송비 기본','8',{unit:'CNY'});
-input(p,16,160,170,'평균 배송일 (고지문)','7~14',{unit:'일'});input(p,206,160,158,'사용 소스','1688 · 타오바오 · 알리',{ro:true});
+input(p,16,160,170,'평균 배송일 (고지문 · 도착일)','12',{unit:'일'});input(p,206,160,158,'대리구매 수수료율','5',{unit:'%'});
 label(p,'요율표 (무게 구간 · 원)',16,230,{size:12,style:'Bold',color:'#333333'});
 table(p,16,252,[['구간 (kg 이하)',170],['요금 (원)',178]],[['0.5','6,000'],['1.0','7,500'],['1.5','9,000'],['2.0','10,500'],['3.0','13,500'],['5.0','19,500'],['10.0','34,500']],34);
 btn(p,16,540,'구간 추가','ghost',120);btn(p,148,540,'CSV 가져오기','ghost');
@@ -152,8 +153,8 @@ input(p,16,96,160,'정확 매칭 임계값','0.80');input(p,196,96,160,'유사 �
 label(p,'국내 비교 가격 방식',16,166,{size:12,color:'#555555'});radio(p,16,188,'상위 N개 평균',true);radio(p,150,188,'중앙값',false);radio(p,250,188,'최저가',false);
 input(p,16,216,160,'상위 N','10');input(p,196,216,160,'검색어 생성 수','3');
 input(p,16,286,160,'하루 후보 수 (카드 발송)','10',{unit:'건'});input(p,196,286,160,'후보 정렬','마진율 높은 순',{select:true});
-input(p,16,356,160,'소스 간 그룹 임계값','0.85');input(p,196,356,160,'그룹 기준','최저 총원가',{select:true});
-label(p,'프리셋을 바꾸면 임계값이 채워지고, 직접 수정하면 "사용자 지정"이 된다. 기준을 넘은 후보가 N건보다 많으면 나머지는 상품 목록에 "후보(미전송)"으로 남는다.',16,420,{size:11,color:'#777777',w:340,lh:16});
+input(p,16,356,160,'동일 이미지 판매자 상한','5',{unit:'곳'});input(p,196,356,160,'수요 집계 기간','3',{unit:'개월'});
+label(p,'후보 점수 = 마진율 + 경쟁 가점(정확 매칭 적을수록) + 수요 가점 − 리스크. 가중치는 고급 설정에서. 기준을 넘은 후보가 N건보다 많으면 나머지는 "후보(미전송)"으로 남는다.',16,420,{size:11,color:'#777777',w:340,lh:16});
 p=panel(f,1044,560,372,370,'콘텐츠 설정');
 label(p,'이미지 생성 모드',16,44,{size:12,color:'#555555'});radio(p,16,66,'A · 중국어/일본어 제거만',false);radio(p,16,92,'B · 제거 + 한국어 삽입',false);radio(p,16,118,'C · 상품 사진 소재로 전체 재구성',true);
 input(p,16,150,160,'상품명 최대 길이','50',{unit:'자'});input(p,196,150,160,'상세 이미지 최대 장수','12',{unit:'장'});
@@ -174,16 +175,41 @@ label(p,'원가 내역 (CNY 193.20 · 중국 → 배대지 A)',16,236,{size:12,s
 [['구매원가 ¥18.5 × 2','6,900'],['현지 배송 ¥8','1,550'],['배대지 310g 구간','6,000'],['관부가세 (USD 61 ≤ 150)','0'],['네이버 수수료 5.5%','1,370'],['결제 수수료 2.0%','498'],['총원가','16,318'],['국내 비교가 (상위10 평균)','24,900'],['마진율','34%']].forEach((r,i)=>{const y=258+i*21;const bold=i>=6;label(p,r[0],16,y,{size:11,style:bold?'Bold':'Regular',color:'#333333'});label(p,r[1],166,y,{size:11,style:bold?'Bold':'Regular',color:'#333333',w:70,align:'RIGHT'});});
 label(p,'다른 소스 비교 (그룹 0.91)',16,456,{size:12,style:'Bold',color:'#333333'});
 [['1688 (기준)','16,318'],['타오바오 ¥17.9 ×1','17,040'],['NETSEA ¥380','21,760']].forEach((r,i)=>{const y=478+i*21;label(p,r[0],16,y,{size:11,color:i===0?'#2F855A':'#333333'});label(p,r[1],166,y,{size:11,color:'#333333',w:70,align:'RIGHT'});});
-label(p,'매칭 결과',16,550,{size:12,style:'Bold',color:'#333333'});
-[['정확 · 스토어A','23,900'],['정확 · 스토어B','24,500'],['정확 · 스토어C','26,300'],['유사 7건 보기 ▾','']].forEach((r,i)=>{const y=572+i*21;label(p,r[0],16,y,{size:11,color:i===3?'#2B6CB0':'#333333'});label(p,r[1],166,y,{size:11,color:'#333333',w:70,align:'RIGHT'});});
+label(p,'경쟁 · 수요 · 근거 (점수 71)',16,550,{size:12,style:'Bold',color:'#333333'});
+label(p,'정확 3 · 동일 이미지 판매자 2곳 · 결과 1,240건\n수요 +12% ↑ (3개월) · 리뷰 평균 48 · 최대 210\n근거: 500ml · 스테인리스 · 형태 일치 (0.91)\n정확 스토어A 23,900 · B 24,500 · C 26,300',16,570,{size:11,color:'#333333',lh:16,w:220});
 label(p,'승인 · 감시 이력',16,664,{size:12,style:'Bold',color:'#333333'});
 label(p,'1차 승인  10-29 08:14 · 2차 승인 10-29 09:40\n등록 완료  10-29 11:00 · 스토어 #1234567 · 23,900원\n감시  10-30 02:40 가격 +18% → 결정 대기',16,686,{size:11,color:'#333333',lh:17});
 input(p,16,742,220,'변동 결정','판매가 수정 → 27,900원 제안',{select:true});
 btn(p,16,800,'결정 적용','success',104);btn(p,132,800,'지금 점검','ghost',104);
 btn(p,16,846,'판매 중지','danger',104);btn(p,132,846,'소스에서 열기','ghost',104);
 
-// 9 시스템 설정 (신규): AI 제공자 · 예산 · 스케줄 · 스토리지 · 텔레그램
-f=screen(SX(8),'시스템 설정',10,true);created.push(f.id);
+// 9 주문 관리 (신규): 주문 ↔ 소스 · 체크리스트 · 실제 원가 · 월 손익
+f=screen(SX(8),'주문 관리',9,true);created.push(f.id);
+tab(f,244,62,'주문 목록',true);tab(f,350,62,'월 손익',false);
+input(f,244,106,140,'상태','전체',{select:true});input(f,396,106,160,'기간','10-01 ~ 10-30',{select:true});input(f,568,106,200,'검색','주문번호 / 구매자 / 상품',{ph:true});btn(f,780,126,'검색','primary',80);btn(f,872,126,'주문 엑셀 가져오기','ghost');
+table(f,244,184,[['주문번호 · 일시',150],['상품 · 옵션',230],['결제액',80],['소스 · 원가',150],['통관부호',70],['상태',120],['도착 예정',90],['작업',60]],[['2025101234 · 10-28 21:10','스테인리스 보온 텀블러 500ml\n블랙 · 1개','23,900','1688 ¥18.5×2 · 16,318','확인','배대지 입고','11-08','[상세]'],['2025101235 · 10-29 08:40','실리콘 접이식 도시락 2단\n그린 · 2개','37,800','타오바오 ¥12.0×2 · 19,600','!미확인','통관부호 대기','-','[상세]'],['2025101236 · 10-29 13:02','접이식 빨래 바구니\n화이트 · 1개','16,900','1688 ¥15.5×1 · 10,900','확인','소스 주문 완료','11-10','[상세]'],['2025101230 · 10-22 10:15','스테인리스 보온 텀블러 500ml\n실버 · 1개','23,900','1688 ¥18.5×2 · 16,318','확인','배송 완료','10-31','[상세]'],['2025101228 · 10-20 17:50','반려동물 자동 급수기\n1개','39,900','1688 ¥45.0×1 · 31,200','확인','취소 (소스 품절)','-','[상세]']],56);
+label(f,'이번 달 주문 18건 · 처리 중 6 · 완료 11 · 취소 1   ·   통관부호 미확인 1건은 소스 주문 전에 반드시 확인',244,530,{size:12,color:'#666666'});
+p=panel(f,244,560,840,380,'월 손익 요약 · 2025-10 (탭 미리보기)');
+[['매출 (결제액 합)','412,300'],['실제 원가 (소스 · 대리구매 · 배대지 · 관부가세)','−268,900'],['네이버 · 결제 수수료','−30,900'],['API 비용 (추정)','−12,340'],['월 손익','100,160'],['예상 원가 대비 실제 차이','+3.2% (배대지 요율 조정 제안)']].forEach((r,i)=>{const y=44+i*30;label(p,r[0],16,y,{size:13,style:i>=4?'Bold':'Regular',color:'#333333'});label(p,r[1],500,y,{size:13,style:i>=4?'Bold':'Regular',color:i===4?'#2F855A':'#333333',w:300,align:'RIGHT'});});
+table(p,16,236,[['상품별 손익 상위 / 하위',420],['주문',60],['손익',120],['마진율',100]],[['스테인리스 보온 텀블러 500ml','7','+46,200','31%'],['접이식 빨래 바구니','4','+21,100','29%'],['반려동물 자동 급수기','1','−8,700','취소·반송비']],30);
+p=panel(f,1104,80,312,860,'주문 상세 · 2025101234');
+label(p,'스테인리스 보온 텀블러 500ml · 블랙 · 1개\n결제 23,900원 · 구매자 김**',16,40,{size:12,color:'#333333',lh:17,w:280});
+label(p,'소스',16,90,{size:12,style:'Bold',color:'#333333'});
+label(p,'1688 · 6912345678 · SKU 블랙\n¥18.5 × 최소 2개 · 현재가 ¥18.5 (변동 없음)\n배대지 A (중국) · 대리구매 5%',16,110,{size:11,color:'#333333',lh:16,w:280});
+btn(p,16,164,'소스 열기','ghost',100);btn(p,124,164,'소스 주문번호 입력','ghost',150);
+label(p,'체크리스트',16,216,{size:12,style:'Bold',color:'#333333'});
+[['개인통관고유부호 확인 (P1234…)',true],['소스 주문 완료 · 10-29 · #CN88…',true],['배대지 입고 · 11-02',true],['발송 · 운송장 입력',false],['통관 완료',false],['배송 완료 → 네이버 발송처리',false]].forEach((c,i)=>{const y=240+i*30;box(p,{x:16,y,w:18,h:18,fill:c[1]?'#2F855A':'#FFFFFF',stroke:c[1]?null:'#888888',r:3,name:'체크'});label(p,c[0],44,y,{size:12,color:c[1]?'#333333':'#777777'});});
+label(p,'예상 도착일  11-08 (소스 주문 10-29 + 12일 · 배송 프로필)',16,426,{size:11,color:'#2B6CB0',w:280,lh:16});
+label(p,'실제 원가 입력',16,470,{size:12,style:'Bold',color:'#333333'});
+input(p,16,492,134,'소스 결제액','37.0',{unit:'CNY'});input(p,162,492,134,'적용 환율','193.4',{ro:true});
+input(p,16,562,134,'대리구매 수수료','360',{unit:'원'});input(p,162,562,134,'배대지 요금','6,000',{unit:'원'});
+input(p,16,632,134,'관부가세','0',{unit:'원'});input(p,162,632,134,'기타','0',{unit:'원'});
+label(p,'실제 합계 13,520원 · 예상 16,318원 (차이 −2,798 · 환율 하락)',16,702,{size:11,color:'#2F855A',w:280,lh:16});
+btn(p,16,740,'저장','primary',130);btn(p,160,740,'취소 처리','danger',112);
+label(p,'메모: 구매자 요청으로 블랙 → 실버 변경 가능 문의',16,800,{size:11,color:'#777777',w:280,lh:16});
+
+// 10 시스템 설정 (신규): AI 제공자 · 예산 · 스케줄 · 스토리지 · 텔레그램
+f=screen(SX(9),'시스템 설정',11,true);created.push(f.id);
 p=panel(f,244,80,380,420,'AI 제공자');
 label(p,'텍스트 LLM',16,44,{size:12,style:'Bold',color:'#333333'});
 radio(p,16,66,'Claude',true);radio(p,116,66,'Gemini',false);radio(p,216,66,'OpenAI',false);
