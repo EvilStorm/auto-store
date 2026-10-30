@@ -131,6 +131,31 @@ Python 3.12 · Playwright · FastAPI + Jinja2 + HTMX · SQLite(SQLAlchemy) · AP
 7. 등록 후 감시(⑩), 예산 집계
 8. 확장: LLM 추출 어댑터, 모드 B/C, 추가 내장 어댑터, 쿠팡
 
+## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (2026-10-30)
+
+구현 2단계의 첫 조각. 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 쇼핑 API로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 `data/analyses/` 에 이력으로 남는다.
+
+```bash
+# 1) 준비 (최초 1회)
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m playwright install chromium
+copy .env.example .env      # ANTHROPIC_API_KEY, NAVER_CLIENT_ID/SECRET 채우기
+
+# 2) 실행
+.venv\Scripts\python -m app.instant https://detail.1688.com/offer/XXXXXXXX.html
+.venv\Scripts\python -m app.instant --fetch-only <URL>     # 페이지 수집만 확인 (키 불필요)
+.venv\Scripts\python -m app.instant --headed --profile 1688 <URL>   # 창을 띄워 로그인 후 프로필 저장
+.venv\Scripts\python -m app.instant --recent 10            # 이력
+.venv\Scripts\python -m app.instant --show 20261030-091200 # 이력 1건 카드 다시 보기
+```
+
+- 키가 없으면 그 단계만 건너뛴다. 네이버 키가 없으면 매칭·마진율 없이 원가까지만 나온다.
+- 환율은 수출입은행 API(키 있을 때) → 네이버 금융(2026-10 현재 페이지가 JS 앱으로 바뀌어 보통 실패) → open.er-api.com(키 없음, 실제로 쓰이는 경로) 순으로 자동 수집하고 `data/exchange_rates.json`에 48시간 캐시한다.
+- 아직 미연결: 데이터랩 수요 신호, 동일 이미지 판매자 수, 리뷰 수 보조 크롤링, 텔레그램 입구. 카드에는 "미연결"로 표시된다.
+
+코드 구조는 DESIGN.md 8장을 따른다: `app/sources/fetch.py`(페이지 스냅샷) → `app/pipeline/extract.py`(LLM 추출·정규화) → `app/pipeline/match.py`(네이버 매칭) → `app/pipeline/cost.py`(원가·점수) → `app/pipeline/card.py`. LLM 제공자는 `app/adapters/llm/` 에서 선택한다(현재 Claude 구현, Gemini·OpenAI는 자리만).
+
 ## 9. 작업 메모 (세션 연속성용)
 
 - Figma 보드는 Claude의 Figma 커넥터로 그렸으나 Figma Starter 플랜의 MCP 호출 한도(월 20회)가 소진되어, 이후 변경분은 `figma/` 폴더의 스크립트를 Figma 커뮤니티 플러그인 **Scripter**로 사용자가 직접 실행하는 방식으로 전달하고 있다. 실행 순서와 주의점은 [figma/README.md](figma/README.md).
