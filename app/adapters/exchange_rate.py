@@ -130,3 +130,13 @@ def get_rates(force_refresh: bool = False) -> Rates:
         return Rates(cached.rates, "last_known", cached.fetched_at)
     # 아무 것도 없을 때의 최후 값 (경고와 함께 사용)
     return Rates({"CNY": 195.0, "JPY": 9.2, "USD": 1400.0}, "fallback_constant", datetime(2000, 1, 1).isoformat())
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    r = get_rates(force_refresh="--refresh" in sys.argv)
+    print(f"source={r.source} fetched_at={r.fetched_at} stale={r.is_stale()}")
+    for k, v in r.rates.items():
+        print(f"  {k}: {v}")
