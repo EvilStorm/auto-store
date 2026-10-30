@@ -18,7 +18,7 @@ for(const t of s1.findAllWithCriteria({types:['TEXT']})){if(t.characters.startsW
 // 01 하단: ⑩ 감시 안내 띠
 const mo=box(s1,{x:120,y:1150,w:2480,h:70,fill:'#FFF7E0',stroke:'#B7791F',r:10,name:'⑩ 등록 상품 감시'});
 label(mo,'⑩ 등록 상품 감시 (별도 주기 · 관리자 설정, 기본 3일)',16,10,{size:14,style:'Bold',color:'#8A6D00'});
-label(mo,'관리자가 "등록 완료"를 표시한 상품(listed)의 소스를 재점검 → 가격 ±임계값 · 품절 · 옵션 품절 · 최소수량 변경 · 페이지 삭제 감지 → 원가 재계산 → 텔레그램 [판매가 수정] [판매 중지] [무시]. 상세는 보드 08.',16,36,{size:12,color:'#5A4A00',w:2440});
+label(mo,'관리자가 "등록 완료"를 표시한 상품(listed)의 소스를 재점검 → 가격 ±임계값 · 품절 · 옵션 품절 · 최소수량 변경 · 페이지 삭제 감지 → 원가 재계산 → 텔레그램 [판매가 수정] [판매 중지] [무시]. 상세는 보드 08.   |   별도 입구 "URL 즉시 분석": 텔레그램이나 관리자 웹에 상품 URL을 넣으면 그 상품만 ①~④를 바로 돌려 같은 카드로 응답, 이력은 상품 목록 > 즉시 분석 이력 탭.',16,36,{size:12,color:'#5A4A00',w:2440});
 // 02
 const s2=await figma.getNodeByIdAsync('526:191');
 const nb=box(s2,{x:120,y:760,w:1000,h:90,fill:'#FFF7E0',stroke:'#B7791F',r:10,name:'v2 추가 상태'});
