@@ -68,3 +68,23 @@ def search(query: str, *, display: int = 20, sort: str = "sim") -> NaverSearchRe
             )
         )
     return NaverSearchResult(query=query, total=int(data.get("total") or 0), items=items)
+
+
+def check() -> str:
+    """키가 아직 쇼핑 검색 API 를 호출할 수 있는지 점검 (2026-07-31 종료 공지 이후 실제 응답 확인용)."""
+    if not available():
+        return "키 없음: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 .env 에 넣으세요"
+    headers = {"X-Naver-Client-Id": settings.naver_client_id, "X-Naver-Client-Secret": settings.naver_client_secret}
+    r = httpx.get(ENDPOINT, params={"query": "텀블러", "display": 3}, headers=headers, timeout=15.0)
+    body = r.text[:300].replace("\n", " ")
+    if r.status_code == 200:
+        n = len(r.json().get("items", []))
+        return f"OK {r.status_code}: 쇼핑 검색 응답 정상 (items {n}) → API 로 매칭 가능"
+    return f"실패 {r.status_code}: {body}"
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    print(check())

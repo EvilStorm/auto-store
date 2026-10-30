@@ -101,7 +101,7 @@ def analyze(url: str, *, channel: str = "cli", headed: bool = False, profile: st
             return rec
         norm = normalize(llm, raw, snap)
         rec["normalized"] = norm.model_dump()
-        match = run_match(llm, raw, norm, snap.main_image())
+        match = run_match(llm, raw, norm, snap.main_image(), profile_dir=(settings.profiles_dir / "naver") if (settings.profiles_dir / "naver").exists() else None)
         rec["match"] = match.model_dump()
         rates = get_rates()
         rec["rates"] = {"source": rates.source, "fetched_at": rates.fetched_at, "rates": rates.rates}

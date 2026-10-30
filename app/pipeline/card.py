@@ -42,13 +42,14 @@ def render_card(url: str, host: str, raw: RawDetail, norm: Normalized, match: Ma
     )
     if not match.skipped_reason:
         demand = "미연결" if match.demand_trend_pct is None else f"{match.demand_trend_pct:+.0f}%"
-        same = "미연결" if match.same_image_sellers is None else f"{match.same_image_sellers}곳"
-        lines.append(f"경쟁  정확 {match.exact_count} · 유사 {match.similar_count} · 결과 {match.total_results:,}건 · 동일 이미지 판매자 {same}")
-        lines.append(f"수요  {demand}  ·  리뷰  미연결")
+        sellers = "-" if match.max_seller_count is None else f"{match.max_seller_count:,}곳"
+        lines.append(f"경쟁  정확 {match.exact_count} · 유사 {match.similar_count} · 수집 {match.total_results}건 · 가격비교 판매처 최대 {sellers}")
+        rv = "-" if match.review_count_avg is None else f"평균 {match.review_count_avg:,} · 최대 {match.review_count_top:,}"
+        lines.append(f"수요  {demand}  ·  리뷰  {rv}")
         if match.reason:
             lines.append(f"근거  {match.reason}")
         if match.naver_category:
-            lines.append(f"네이버 카테고리 추천  {match.naver_category}")
+            lines.append(f"네이버 카테고리 id  {match.naver_category}")
     lines.append(f"점수  {econ.score if econ.score is not None else '-'}  ·  요건 {status} ({norm.requirement_reason})")
     lines.append(f"재질  {norm.material_code} · 품목 {norm.item_type} · 무게 {c.weight_g:g}g")
     if norm.brand_detected:
@@ -56,7 +57,9 @@ def render_card(url: str, host: str, raw: RawDetail, norm: Normalized, match: Ma
     if c.flags:
         lines.append("주의  " + " / ".join(FLAG_KO.get(f, f) for f in c.flags))
     if match.exact:
-        lines.append("정확 매칭  " + " | ".join(f"{r['mall']} {r['price']:,}" for r in match.exact[:3]))
+        lines.append("정확 매칭  " + " | ".join(f"{r['title'][:22]} {r['price']:,}원 (리뷰 {r.get('review_count') or 0:,})" for r in match.exact[:3]))
+    elif match.similar:
+        lines.append("유사 상품  " + " | ".join(f"{r['title'][:22]} {r['price']:,}원" for r in match.similar[:3]))
     lines.append(f"검색어  {', '.join(match.queries)}")
     lines.append(f"링크  {url}")
     lines.append(f"(LLM 추정 비용 {llm_cost_krw:,.0f}원)")

@@ -146,6 +146,9 @@ def compute(raw: RawDetail, norm: Normalized, match: MatchResult, rates: Rates) 
             comp = 5
         if match.same_image_sellers is not None and match.same_image_sellers >= settings.same_image_seller_cap:
             comp -= 20
+        # 가격비교 카탈로그 판매처가 많으면 이미 포화된 상품 (100곳 이상 감점)
+        if match.max_seller_count is not None and match.max_seller_count >= 100:
+            comp -= 10
         parts["competition"] = comp
         demand = 0
         if match.demand_trend_pct is not None:
