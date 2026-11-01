@@ -247,18 +247,43 @@ class Adapter1688(SourceAdapter):
         """헤드풀 창에서 사용자가 직접 로그인하도록 두고, Enter 또는 로그인 감지까지 기다린다. 프로필에 쿠키가 남는다."""
         if not self.headed:
             raise RuntimeError("--login 은 --headed 와 함께")
-        self.page.goto("https://login.1688.com/member/signin.htm", wait_until="domcontentloaded", timeout=60000)
+        self._goto_soft("https://login.1688.com/member/signin.htm")
         print("창에서 1688 에 로그인하세요 (QR · 휴대폰 인증 · 슬라이더). 끝나면 이 콘솔에서 Enter 를 누르세요.")
+        for attempt in range(6):
+            try:
+                input()
+            except EOFError:
+                self.page.wait_for_timeout(wait_seconds * 1000)
+            self._goto_soft("https://www.1688.com/")
+            url = self.page.url
+            body = ""
+            try:
+                body = (self.page.evaluate("document.body ? document.body.innerText.slice(0, 5000) : ''") or "")
+            except Exception:
+                pass
+            if "login_unusual" in url or "login.taobao.com" in url or "login.1688.com" in url or "passport.alibaba.com" in url:
+                print(f"아직 로그인/추가 인증 페이지입니다 ({url[:70]}…). 창에서 인증(휴대폰 · 슬라이더 · 비정상 로그인 확인)을 마치고 다시 Enter 를 누르세요. ({attempt + 1}/6)")
+                continue
+            ok = any(k in body for k in ("退出", "我的1688", "我的阿里", "消息", "采购车")) and "免费注册" not in body[:300]
+            print("로그인 확인:", "성공 (프로필 저장됨)" if ok else f"확인 못 함 — 현재 페이지 {url[:80]} · 창에서 로그인 상태를 다시 보고 Enter")
+            if ok:
+                return True
+        return False
+
+    def _goto_soft(self, url: str) -> None:
+        """리다이렉트(추가 인증 페이지 등)로 이동이 가로채여도 예외 없이 자리를 잡을 때까지 기다린다."""
         try:
-            input()
-        except EOFError:
-            self.page.wait_for_timeout(wait_seconds * 1000)
-        self.page.goto("https://www.1688.com/", wait_until="domcontentloaded", timeout=60000)
+            self.page.goto(url, wait_until="commit", timeout=60000)
+        except Exception as e:  # "interrupted by another navigation" 류
+            if "interrupted" not in str(e).lower() and "navigation" not in str(e).lower():
+                raise
+        for _ in range(3):
+            try:
+                self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                break
+            except Exception:
+                pass
         self.page.wait_for_timeout(2500)
-        body = (self.page.evaluate("document.body ? document.body.innerText.slice(0, 5000) : ''") or "")
-        ok = any(k in body for k in ("退出", "我的1688", "我的阿里", "消息")) and "登录" not in body[:200]
-        print("로그인 확인:", "성공 (프로필 저장됨)" if ok else "확인 못 함 — 창에서 로그인 상태를 다시 보세요")
-        return ok
 
     def detail(self, item_url: str) -> RawDetail:
         time.sleep(random.uniform(*self.delay_range))
