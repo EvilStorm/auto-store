@@ -67,10 +67,12 @@ class Settings:
     google_ai_api_key: str = field(default_factory=lambda: _s("GOOGLE_AI_API_KEY"))
     openai_api_key: str = field(default_factory=lambda: _s("OPENAI_API_KEY"))
 
-    # Supabase (v3: DB · 인증 · 스토리지)
+    # Supabase (v3: DB · 인증 · 스토리지). service_role 과 DB URL 은 scripts/ 에서만 os.getenv 로 읽는다
     supabase_url: str = field(default_factory=lambda: _s("SUPABASE_URL"))
     supabase_anon_key: str = field(default_factory=lambda: _s("SUPABASE_ANON_KEY"))
     supabase_bucket: str = field(default_factory=lambda: _s("SUPABASE_BUCKET", "product-images"))
+    # user_settings 에서 덮어쓴 배대지 요율표 (없으면 .env / 기본값)
+    forwarder_rates_override: str = ""
 
     # 네이버
     naver_client_id: str = field(default_factory=lambda: _s("NAVER_CLIENT_ID"))
@@ -104,8 +106,8 @@ class Settings:
     profiles_dir: Path = field(default_factory=lambda: ROOT / _s("BROWSER_PROFILES_DIR", "./data/profiles"))
 
     def forwarder_rate_table(self) -> list[tuple[float, int]]:
-        """(kg 이하, 원) 구간 요율표. 환경변수 FORWARDER_RATES="0.5:6000,1:7500,..." 로 덮어쓸 수 있다."""
-        raw = _s("FORWARDER_RATES")
+        """(kg 이하, 원) 구간 요율표. user_settings.forwarder_rates > 환경변수 FORWARDER_RATES > 기본값."""
+        raw = self.forwarder_rates_override or _s("FORWARDER_RATES")
         if raw:
             out = []
             for part in raw.split(","):

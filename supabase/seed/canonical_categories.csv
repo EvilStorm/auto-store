@@ -1,0 +1,46 @@
+id,parent_id,path,naver_cat_id,item_type,default_weight_g,search_keywords_ko
+kitchen,,주방,,general,0,주방용품
+kitchen.tumbler,kitchen,주방 > 텀블러·보온병,50004540,general,350,텀블러|보온병|보온 텀블러
+kitchen.tableware,kitchen,주방 > 식기·접시,,general,400,접시|식기|플레이트
+kitchen.container,kitchen,주방 > 밀폐용기·보관,,general,300,밀폐용기|보관용기|반찬통
+kitchen.tools,kitchen,주방 > 조리도구,,general,200,조리도구|주방 도구
+kitchen.coffee,kitchen,주방 > 커피·차 도구,,general,300,커피 도구|드리퍼|차 도구
+kitchen.lunchbox,kitchen,주방 > 도시락,,general,350,도시락|런치박스
+living,,생활·수납,,general,0,생활용품
+living.storage,living,생활·수납 > 수납함·정리함,,general,500,수납함|정리함|수납 박스
+living.hanger,living,생활·수납 > 옷걸이·행거,,general,300,옷걸이|행거
+living.bath,living,생활·수납 > 욕실용품,,general,250,욕실용품|욕실 선반
+living.cleaning,living,생활·수납 > 청소용품,,general,300,청소용품|청소 도구
+living.laundry,living,생활·수납 > 세탁용품,,general,300,세탁용품|세탁 바구니
+deco,,홈데코,,general,0,홈데코
+deco.lighting,deco,홈데코 > 조명,,electronics,400,조명|무드등|LED 조명
+deco.wall,deco,홈데코 > 벽장식·액자,,general,300,벽장식|액자|포스터
+deco.plant,deco,홈데코 > 식물·화분,,general,400,화분|플랜테리어
+deco.candle,deco,홈데코 > 캔들·디퓨저,,general,250,캔들|디퓨저
+pet,,반려동물,,general,0,반려동물 용품
+pet.feeder,pet,반려동물 > 급수기·식기,,general,400,강아지 급수기|고양이 식기|반려동물 급수기
+pet.toy,pet,반려동물 > 장난감,,general,150,강아지 장난감|고양이 장난감
+pet.walk,pet,반려동물 > 외출용품,,general,200,강아지 하네스|리드줄
+office,,문구·오피스,,general,0,문구
+office.pen,office,문구·오피스 > 필기구,,general,50,펜|필기구|젤펜
+office.note,office,문구·오피스 > 노트·다이어리,,general,250,노트|다이어리
+office.desk,office,문구·오피스 > 데스크 정리,,general,300,데스크 정리|책상 정리함|펜 홀더
+digital,,디지털 액세서리,,electronics,0,디지털 액세서리
+digital.cable,digital,디지털 액세서리 > 케이블·충전기,,electronics,100,충전 케이블|충전기
+digital.stand,digital,디지털 액세서리 > 거치대,,general,250,휴대폰 거치대|태블릿 거치대|노트북 거치대
+digital.case,digital,디지털 액세서리 > 케이스·파우치,,general,100,휴대폰 케이스|에어팟 케이스|파우치
+car,,차량용품,,general,0,차량용품
+car.holder,car,차량용품 > 거치대·수납,,general,200,차량용 거치대|차량 수납
+car.wash,car,차량용품 > 세차용품,,general,300,세차용품|세차 타월
+outdoor,,스포츠·아웃도어,,general,0,아웃도어
+outdoor.camping,outdoor,스포츠·아웃도어 > 캠핑 소품,,general,400,캠핑용품|캠핑 소품
+outdoor.fitness,outdoor,스포츠·아웃도어 > 요가·홈트 소품,,general,400,요가 매트|홈트 용품
+outdoor.bottle,outdoor,스포츠·아웃도어 > 스포츠 물병,,general,200,스포츠 물병|운동 물병
+fashion,,패션잡화,,general,0,패션잡화
+fashion.socks,fashion,패션잡화 > 양말,,general,50,양말|스포츠 양말
+fashion.hat,fashion,패션잡화 > 모자,,general,100,모자|볼캡|버킷햇
+fashion.bag,fashion,패션잡화 > 가방·파우치,,general,300,가방|에코백|파우치
+fashion.acc,fashion,패션잡화 > 액세서리,,general,30,귀걸이|목걸이|헤어 액세서리
+kids,,유아·아동,,kids,0,유아용품
+kids.tableware,kids,유아·아동 > 유아 식기,,kids,200,유아 식기|이유식 그릇
+kids.toy,kids,유아·아동 > 장난감,,kids,300,아기 장난감|유아 장난감

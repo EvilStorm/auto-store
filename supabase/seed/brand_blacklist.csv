@@ -1,0 +1,64 @@
+name,lang,kind,note
+Disney,en,character,디즈니 전반
+迪士尼,zh,character,디즈니
+디즈니,ko,character,디즈니
+Mickey,en,character,미키마우스
+米奇,zh,character,미키마우스
+Sanrio,en,character,산리오
+三丽鸥,zh,character,산리오
+산리오,ko,character,산리오
+Hello Kitty,en,character,헬로키티
+凯蒂猫,zh,character,헬로키티
+Kuromi,en,character,쿠로미
+库洛米,zh,character,쿠로미
+Cinnamoroll,en,character,시나모롤
+玉桂狗,zh,character,시나모롤
+Pokemon,en,character,포켓몬
+宝可梦,zh,character,포켓몬
+Pikachu,en,character,피카츄
+皮卡丘,zh,character,피카츄
+Snoopy,en,character,스누피
+史努比,zh,character,스누피
+Miffy,en,character,미피
+米菲,zh,character,미피
+Chiikawa,en,character,치이카와
+吉伊卡哇,zh,character,치이카와
+Crayon Shin-chan,en,character,짱구
+蜡笔小新,zh,character,짱구
+Doraemon,en,character,도라에몽
+哆啦A梦,zh,character,도라에몽
+Marvel,en,character,마블
+漫威,zh,character,마블
+Line Friends,en,character,라인프렌즈
+Kakao Friends,en,character,카카오프렌즈
+Stanley,en,brand,스탠리 (텀블러)
+斯坦利,zh,brand,스탠리
+스탠리,ko,brand,스탠리
+Starbucks,en,brand,스타벅스
+星巴克,zh,brand,스타벅스
+Thermos,en,brand,써모스
+膳魔师,zh,brand,써모스
+Zojirushi,en,brand,조지루시
+象印,zh,brand,조지루시
+Tiger,en,brand,타이거 (보온병)
+虎牌,zh,brand,타이거
+Nike,en,brand,나이키
+耐克,zh,brand,나이키
+Adidas,en,brand,아디다스
+阿迪达斯,zh,brand,아디다스
+Apple,en,brand,애플
+苹果,zh,brand,애플 (제목에서 과일 의미와 구분 필요)
+Samsung,en,brand,삼성
+三星,zh,brand,삼성
+Dyson,en,brand,다이슨
+戴森,zh,brand,다이슨
+Xiaomi,en,brand,샤오미
+小米,zh,brand,샤오미
+MUJI,en,brand,무지
+无印良品,zh,brand,무지
+IKEA,en,brand,이케아
+宜家,zh,brand,이케아
+LEGO,en,brand,레고
+乐高,zh,brand,레고
+Lock&Lock,en,brand,락앤락
+乐扣乐扣,zh,brand,락앤락

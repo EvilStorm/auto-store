@@ -241,7 +241,49 @@ APP_ENV=prd .venv/bin/python -m app.instant <URL>
 
 ---
 
-## 5. 작업 끝낼 때
+## 5. Supabase 1단계 적용 (v3 · 프로젝트당 최초 1회)
+
+v3 구현 1단계(DESIGN.md 10장). 스키마·RLS·시드·첫 계정을 만든다. **dev 프로젝트에서 먼저** 하고, 운영 프로젝트는 `.env.prd` + `$env:APP_ENV="prd"` 로 같은 순서를 반복한다. 윈도우는 `.venv\Scripts\python`, 맥은 `.venv/bin/python` 으로 읽으면 된다.
+
+### 5-1. 대시보드에서 (브라우저)
+1. **Database → Extensions** 에서 `vector` 켜기 (001 이 `create extension` 하지만 권한에 따라 대시보드가 필요할 수 있음)
+2. **Authentication → Providers → Email** 켜기. 테스트 중엔 "Confirm email" 을 끄거나, 아래 부트스트랩 스크립트가 `email_confirm=True` 로 만드니 그대로 둬도 됨
+3. **Project Settings → Database → Connection string → URI** 복사 → `.env.dev` 의 `SUPABASE_DB_URL`. (비밀번호가 들어가므로 적용 후 지워도 됨)
+4. **Project Settings → API** 의 `anon` 키 → `SUPABASE_ANON_KEY`, `service_role` 키 → `SUPABASE_SERVICE_KEY` (service_role 은 5-2·5-3 에서만 쓴다)
+
+### 5-2. 마이그레이션 · 시드
+```powershell
+.venv\Scripts\python scripts\migrate.py --status     # 미적용 목록
+.venv\Scripts\python scripts\migrate.py              # 001 ~ 007 적용 (schema_migrations 에 기록, 재실행 안전)
+.venv\Scripts\python scripts\seed.py                 # 사전 · 표준 카테고리 · 요건표 · 소스 정의 upsert, dict_version +1
+```
+`SUPABASE_DB_URL` 을 넣고 싶지 않으면 `migrate.py --print` 로 출력한 SQL 을 대시보드 **SQL Editor** 에 붙여 넣어 실행해도 된다(그 경우 `schema_migrations` 기록은 안 남는다).
+
+### 5-3. 첫 계정 (admin)
+```powershell
+.venv\Scripts\python scripts\bootstrap_admin.py --email you@example.com
+```
+비밀번호는 프롬프트로 두 번 입력. 001 트리거가 **첫 계정을 admin** 으로 만들고, 개인 배송 프로필 2개(중국·일본 템플릿)가 생긴다.
+
+### 5-4. 로그인 · 확인
+```powershell
+.venv\Scripts\python -m app.auth login --email you@example.com
+.venv\Scripts\python -m app.auth status
+```
+`status` 에 `role admin`, `user_settings: 방금 .env 기본값으로 생성`, `표준 카테고리 45개` 가 나오면 1단계 완료. 세션은 `~\.auto-store\session.dev.json` 에 남고, **다른 PC 에서도 같은 계정으로 login 하면 같은 설정이 보인다**(이것이 1단계의 검증 기준).
+
+### 5-5. 끝나면
+- `.env.dev` 에서 `SUPABASE_DB_URL` 과 `SUPABASE_SERVICE_KEY` 를 지워도 된다. 일상 실행(워커 · CLI · 관리자 웹)은 anon 키 + 로그인 세션만 쓴다.
+- 시드를 고쳤으면 `scripts/seed.py` 를 다시 돌린다(upsert · dict_version +1). 마이그레이션을 추가하면 `008_*.sql` 로 번호를 이어 `migrate.py`.
+
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| `permission denied to create extension "vector"` | 확장 권한 | 5-1 ① 대시보드에서 켠 뒤 재실행 |
+| `relation "auth.users" does not exist` | DB URL 이 Supabase 가 아님 | URI 를 다시 복사 (포트 5432 Direct 또는 6543 Pooler) |
+| `로그인 실패` / `Invalid login credentials` | 이메일 미확인 또는 비번 | 5-1 ② 또는 bootstrap 재실행(기존 계정은 건너뜀) |
+| `status` 에 `role (없음 …)` | 001 트리거 전에 만든 계정 | SQL Editor 에서 `insert into profiles(user_id, role) values ('<uid>','admin')` |
+
+## 6. 작업 끝낼 때
 
 ```bash
 git status

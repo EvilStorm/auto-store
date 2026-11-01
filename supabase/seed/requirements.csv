@@ -1,0 +1,8 @@
+item_type,status,reason,docs
+general,pass,전원·배터리·무선 통신이 없는 일반 생활용품. 목록통관 가능,
+electronics,required,전기용품 KC 안전확인 또는 전파인증(KC 적합성) 대상. 후보로 올리되 2차 승인 전 요건 확보 확인,KC 안전확인 신고증 · 전파인증 적합성 평가
+kids,required,13세 이하 어린이제품 KC 안전확인 대상,어린이제품 KC 안전확인 · 공급자적합성확인
+food,excluded,식품은 수입식품 신고 대상이라 목록통관 배제. 다루지 않음,
+cosmetics,excluded,화장품은 기능성·성분 심사와 수입 신고 대상. 다루지 않음,
+medical,excluded,의료기기·의약외품은 허가 대상. 다루지 않음,
+other,pass,분류 미확정. 카드에 "요건 미확정" 배지로 표시하고 확인 큐로,

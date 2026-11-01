@@ -1,0 +1,36 @@
+[
+  {
+    "name": "중국 → 한국 배대지 A",
+    "country": "CN",
+    "currency": "CNY",
+    "rate_table_json": [
+      {"kg_max": 0.5, "won": 6000},
+      {"kg_max": 1.0, "won": 7500},
+      {"kg_max": 1.5, "won": 9000},
+      {"kg_max": 2.0, "won": 10500},
+      {"kg_max": 3.0, "won": 13500},
+      {"kg_max": 5.0, "won": 19500},
+      {"kg_max": 10.0, "won": 34500}
+    ],
+    "local_shipping_default": 8,
+    "proxy_fee_rate": 0.05,
+    "lead_days": 12
+  },
+  {
+    "name": "일본 → 한국 배대지 B",
+    "country": "JP",
+    "currency": "JPY",
+    "rate_table_json": [
+      {"kg_max": 0.5, "won": 9000},
+      {"kg_max": 1.0, "won": 11000},
+      {"kg_max": 1.5, "won": 13000},
+      {"kg_max": 2.0, "won": 15000},
+      {"kg_max": 3.0, "won": 19000},
+      {"kg_max": 5.0, "won": 27000},
+      {"kg_max": 10.0, "won": 47000}
+    ],
+    "local_shipping_default": 800,
+    "proxy_fee_rate": 0.05,
+    "lead_days": 8
+  }
+]

@@ -1,0 +1,3 @@
+id,name,country,currency,base_url,adapter_key,auth_mode
+1688,1688,CN,CNY,https://www.1688.com,1688,browser_profile
+aliexpress,알리익스프레스,CN,KRW,https://ko.aliexpress.com,aliexpress,none
