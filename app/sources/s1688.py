@@ -130,12 +130,15 @@ class Adapter1688(SourceAdapter):
     def open(self) -> None:
         if not self.profile_dir:
             raise RuntimeError("1688 은 로그인 프로필이 필요합니다: --profile 1688 (data/profiles/1688)")
-        Path(self.profile_dir).mkdir(parents=True, exist_ok=True)
+        from app import browser
+
         self._pw = sync_playwright().start()
-        self.ctx = self._pw.chromium.launch_persistent_context(
-            str(self.profile_dir), headless=not self.headed, locale="zh-CN", viewport={"width": 1366, "height": 900},
+        self.ctx = browser.launch_persistent(
+            self._pw, self.profile_dir, headless=not self.headed, locale="zh-CN", viewport={"width": 1366, "height": 900},
         )
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
+        if self.headed:
+            print(f"브라우저: {browser.working_channel()} · 프로필 {self.profile_dir}")
 
     def close(self) -> None:
         try:

@@ -107,19 +107,21 @@ def _clean_text(t: str) -> str:
 
 
 def fetch_page(url: str, *, profile_dir: Path | None = None, headed: bool = False, wait_ms: int = 2500) -> PageSnapshot:
+    from app import browser as br
+
     host = urlparse(url).netloc
     with sync_playwright() as p:
         if profile_dir:
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            ctx = p.chromium.launch_persistent_context(
-                str(profile_dir),
+            ctx = br.launch_persistent(
+                p,
+                profile_dir,
                 headless=not headed,
                 locale="zh-CN",
                 viewport={"width": 1366, "height": 900},
             )
             browser = None
         else:
-            browser = p.chromium.launch(headless=not headed)
+            browser = br.launch(p, headless=not headed)
             ctx = browser.new_context(
                 locale="zh-CN",
                 viewport={"width": 1366, "height": 900},

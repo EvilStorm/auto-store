@@ -110,6 +110,8 @@ $env:APP_ENV="prd"; .venv\Scripts\python -m app.instant <URL>
 | 3.12 를 설치했는데 `python --version` 이 여전히 3.10 | **시스템 PATH** 에 남은 `...\Python310` 항목. Windows 는 시스템 PATH 를 사용자 PATH 보다 먼저 보므로 사용자 PATH 맨 앞의 3.12 가 밀린다 | `시스템 변수 → Path` 에서 Python310 항목 삭제(관리자 권한) 후 새 창. 또는 PATH 를 안 고치고 `py -3.12 -m venv .venv` 로 venv 만 만들면 이후는 `.venv\Scripts\python` 이라 상관없다 |
 | `이 시스템에서 스크립트를 실행할 수 없으므로` | `Activate.ps1` 실행 정책 | activate 없이 `.venv\Scripts\python` 직접 사용, 또는 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | `APP_ENV 는 dev \| prd 중 하나여야 합니다` | 오타 (`prod`, `production` 등) | `$env:APP_ENV="prd"` 또는 `Remove-Item Env:APP_ENV` (dev 로 복귀) |
+| `Executable doesn't exist at …\ms-playwright\chromium-…\chrome.exe` 인데 파일은 있음 / `spawn UNKNOWN` (헤드풀만) | 회사 PC 정책 · 백신이 LocalAppData 의 다운로드 크로미움 실행을 차단 (헤드리스 셸은 통과) | 자동 폴백이 설치된 Chrome → Edge 를 쓴다. 고정하려면 `.env.dev` 에 `PLAYWRIGHT_CHANNEL=chrome` (또는 `msedge`). 실행 시 "브라우저: chrome" 이 찍히면 된 것 |
+| 한자 URL 이 `保?杯` 로 깨짐 | PowerShell 콘솔 cp949 | URL 인코딩한 주소 사용 (`%E4%BF%9D%E6%B8%A9%E6%9D%AF` = 保温杯). 브라우저 주소창에서 복사하면 인코딩된 형태로 나옴 |
 | 한글이 `?` 나 깨진 글자로 출력 | 콘솔 cp949 | CLI 가 utf-8 로 바꿔 출력하지만, 그래도 깨지면 `$env:PYTHONIOENCODING="utf-8"` 후 실행 |
 | `Download failed` / `ECONNRESET` (playwright install) | 회사망 프록시·방화벽 | `$env:HTTPS_PROXY="http://프록시:포트"` 지정 후 재시도 |
 | 다른 python 에 설치됨 | 전역 `python -m playwright` 실행 | 항상 `.venv\Scripts\python` 을 앞에 붙인다 |

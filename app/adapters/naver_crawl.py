@@ -145,14 +145,15 @@ def _parse_card(c: dict) -> CrawledItem | None:
 
 def search(queries: list[str], *, profile_dir: Path | None = None, headed: bool = False, delay_range=(1.5, 3.5)) -> list[CrawlResult]:
     """여러 검색어를 한 브라우저 세션으로 순차 조회한다."""
+    from app import browser as br
+
     results: list[CrawlResult] = []
     with sync_playwright() as p:
         if profile_dir:
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            ctx = p.chromium.launch_persistent_context(str(profile_dir), headless=not headed, locale="ko-KR", viewport={"width": 1366, "height": 900})
+            ctx = br.launch_persistent(p, profile_dir, headless=not headed, locale="ko-KR", viewport={"width": 1366, "height": 900})
             browser = None
         else:
-            browser = p.chromium.launch(headless=not headed)
+            browser = br.launch(p, headless=not headed)
             ctx = browser.new_context(locale="ko-KR", user_agent=UA, viewport={"width": 1366, "height": 900})
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
