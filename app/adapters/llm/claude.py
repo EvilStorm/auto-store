@@ -27,22 +27,13 @@ class ClaudeLLM(LLM):
     provider = "claude"
 
     def __init__(self, model: str | None = None):
+        super().__init__()
         if not settings.anthropic_api_key:
             raise LLMNotConfigured("ANTHROPIC_API_KEY 가 없습니다. .env 에 넣어주세요.")
         self.model = model or DEFAULT_MODEL
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=120.0)
-        self.usage: list[UsageRecord] = []
 
-    def complete_json(
-        self,
-        prompt: str,
-        schema: Type[T],
-        *,
-        system: str = "",
-        images: Sequence[ImageRef] = (),
-        purpose: str = "generic",
-        effort: str = "low",
-    ) -> T:
+    def _call(self, prompt: str, schema: Type[T], *, system: str, images: Sequence[ImageRef], effort: str) -> tuple[T, UsageRecord]:
         content: list[dict] = []
         for im in images:
             if im.label:
@@ -76,17 +67,15 @@ class ClaudeLLM(LLM):
         u = resp.usage
         pin, pout = PRICES.get(self.model, PRICES[DEFAULT_MODEL])
         cost_usd = (u.input_tokens / 1e6) * pin + (u.output_tokens / 1e6) * pout
-        self.usage.append(
-            UsageRecord(
-                provider=self.provider,
-                model=self.model,
-                purpose=purpose,
-                input_tokens=u.input_tokens,
-                output_tokens=u.output_tokens,
-                est_cost_krw=round(cost_usd * USD_KRW_FOR_ESTIMATE, 1),
-            )
+        usage = UsageRecord(
+            provider=self.provider,
+            model=self.model,
+            purpose="",
+            input_tokens=u.input_tokens,
+            output_tokens=u.output_tokens,
+            est_cost_krw=round(cost_usd * USD_KRW_FOR_ESTIMATE, 1),
         )
         parsed = resp.parsed_output
         if parsed is None:
             raise RuntimeError("LLM 구조화 출력 파싱 실패")
-        return parsed
+        return parsed, usage

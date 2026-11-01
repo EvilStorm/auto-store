@@ -272,6 +272,27 @@ v3 구현 1단계(DESIGN.md 10장). 스키마·RLS·시드·첫 계정을 만든
 ```
 `status` 에 `role admin`, `user_settings: 방금 .env 기본값으로 생성`, `표준 카테고리 45개` 가 나오면 1단계 완료. 세션은 `~\.auto-store\session.dev.json` 에 남고, **다른 PC 에서도 같은 계정으로 login 하면 같은 설정이 보인다**(이것이 1단계의 검증 기준).
 
+### 5-4-1. 단위 테스트 · 1688 샘플 · 규칙 세트 (2·3단계)
+```powershell
+.venv\Scripts\python -m pytest -q                                     # 규칙 엔진 · 정규화 · 캐시 · 1688 파싱 26개
+
+# 1688 로그인 프로필 만들기 (창이 뜨면 로그인, 60초 안에 이어감) + 목록 2페이지를 샘플로 저장
+.venv\Scripts\python -m app.sources.s1688 --profile 1688 --headed --pages 2 "https://s.1688.com/selloffer/offer_search.htm?keywords=保温杯" -o data\samples_tumbler.json
+
+# 샘플로 규칙 세트 초안 생성 (LLM 1회 · ai_results 캐시 경유) → 커버리지 출력 → DB 에 draft 저장 (로그인 필요)
+.venv\Scripts\python -m app.taxonomy.generate --source 1688 --category kitchen.tumbler --samples data\samples_tumbler.json
+
+# 관심 카테고리를 넣은 뒤 수집 + 정규화 (DB 쓰기 없이 카운트만 보려면 --dry-run)
+.venv\Scripts\python -m app.pipeline.collector --dry-run --headed
+```
+관심 카테고리는 관리자 웹(6단계) 전까지는 SQL Editor 로 넣는다:
+```sql
+insert into source_categories (source_id, label_raw, url, canonical_category_id)
+values ('1688', '保温杯', 'https://s.1688.com/selloffer/offer_search.htm?keywords=保温杯', 'kitchen.tumbler') returning id;
+insert into user_watch_categories (user_id, source_category_id, max_pages) values (auth.uid(), <위 id>, 2);
+insert into user_sources (user_id, source_id, browser_profile_name) values (auth.uid(), '1688', '1688');
+```
+
 ### 5-5. 끝나면
 - `.env.dev` 에서 `SUPABASE_DB_URL` 과 `SUPABASE_SERVICE_KEY` 를 지워도 된다. 일상 실행(워커 · CLI · 관리자 웹)은 anon 키 + 로그인 세션만 쓴다.
 - 시드를 고쳤으면 `scripts/seed.py` 를 다시 돌린다(upsert · dict_version +1). 마이그레이션을 추가하면 `008_*.sql` 로 번호를 이어 `migrate.py`.

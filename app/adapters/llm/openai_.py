@@ -45,16 +45,7 @@ class OpenAILLM(LLM):
         self.model = model or DEFAULT_MODEL
         self.client = OpenAI(api_key=settings.openai_api_key, timeout=120.0)
 
-    def complete_json(
-        self,
-        prompt: str,
-        schema: Type[T],
-        *,
-        system: str = "",
-        images: Sequence[ImageRef] = (),
-        purpose: str = "generic",
-        effort: str = "low",
-    ) -> T:
+    def _call(self, prompt: str, schema: Type[T], *, system: str, images: Sequence[ImageRef], effort: str) -> tuple[T, UsageRecord]:
         content: list[dict] = []
         for im in images:
             if im.label:
@@ -89,18 +80,16 @@ class OpenAILLM(LLM):
         out_t = getattr(u, "output_tokens", 0) or 0
         pin, pout = PRICES.get(self.model, PRICES[DEFAULT_MODEL])
         cost_usd = (in_t / 1e6) * pin + (out_t / 1e6) * pout
-        self.usage.append(
-            UsageRecord(
-                provider=self.provider,
-                model=self.model,
-                purpose=purpose,
-                input_tokens=in_t,
-                output_tokens=out_t,
-                est_cost_krw=round(cost_usd * USD_KRW_FOR_ESTIMATE, 1),
-            )
+        usage = UsageRecord(
+            provider=self.provider,
+            model=self.model,
+            purpose="",
+            input_tokens=in_t,
+            output_tokens=out_t,
+            est_cost_krw=round(cost_usd * USD_KRW_FOR_ESTIMATE, 1),
         )
         parsed = resp.output_parsed
         if parsed is None:
             refusal = next((o for o in getattr(resp, "output", []) if getattr(o, "type", "") == "refusal"), None)
             raise RuntimeError(f"LLM 구조화 출력 파싱 실패{' (거부: ' + str(refusal) + ')' if refusal else ''}")
-        return parsed
+        return parsed, usage

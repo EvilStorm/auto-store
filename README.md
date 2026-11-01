@@ -154,6 +154,14 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 
 `supabase/migrations/001~007` (계정·공용 참조·공용 수집·개인·RLS 3종·RPC·규칙 세트/AI 캐시), `supabase/seed/` (표준 카테고리 45개·별칭·속성 코드·브랜드 블랙리스트·스톱워드·요건표·소스 정의·배송 프로필 템플릿), `scripts/migrate.py`·`seed.py`·`bootstrap_admin.py`, `app/db.py`(anon+JWT / service)·`app/auth.py`(login/status/logout, 세션은 `~/.auto-store/session.<env>.json`)·`app/user_settings.py`(첫 로그인 때 .env 기본값으로 생성 → 이후 DB 가 진실). 적용 순서는 [SETUP.md](SETUP.md) 5장. **아직 실제 Supabase 에 적용·검증 전** — 적용하면 `python -m app.auth status` 로 확인.
 
+## 8-0-1. 구현 2·3단계 (2026-11-01): 1688 어댑터 · 규칙 엔진 · 사전 정규화 · AI 결과 캐시
+
+- `app/taxonomy/units.py` 숫자·단위 추출(ml/L/oz/cm/mm/inch/g/kg/mAh/W/개입, 치수 30*20*10cm) · `engine.py` 규칙 세트 DSL 8연산(select·regex·unit·strip·map·template·default·flag) + `validate` + `coverage` · `dictionary.py` 공용 사전(DB 또는 시드 CSV) · `generate.py` 규칙 생성기(샘플 → LLM 1회 → 초안 → 검증 → draft 저장, `python -m app.taxonomy.generate`)
+- `app/pipeline/normalizer.py` ② 사전 정규화기: 규칙 세트(없으면 `DEFAULT_RULES`) → 사전 → 확인 큐. 브랜드 텍스트·요건·공용 제외·검색어 2~3개. LLM 0회
+- `app/ai_cache.py` + `adapters/llm/base.py`: 모든 `complete_json` 이 (용도@버전 · 모델 · 입력 해시) 캐시를 먼저 봄. 이미지는 `ImageRef.phash` 로 키. 백엔드 Supabase(`ai_results`) / Memory / Null. 제공자 어댑터는 `_call()` 만 구현
+- `app/sources/base.py` 어댑터 계약 · `s1688.py` 1688 목록·상세(로그인 프로필, 카드 휴리스틱, 가격 구간·起批·成交 파싱, `python -m app.sources.s1688 --profile 1688 --pages 2 <URL> -o samples.json`) · `app/repo.py` 데이터 접근 · `app/pipeline/collector.py` ①+② 배치(`python -m app.pipeline.collector [--dry-run]`, 배치 잠금)
+- `tests/` 26개 (`.venv\Scripts\python -m pytest -q`). **1688 실제 수집·DB 적재는 로그인 프로필과 Supabase 적용 뒤 검증.**
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).
