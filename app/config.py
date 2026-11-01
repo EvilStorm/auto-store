@@ -103,6 +103,16 @@ class Settings:
     similar_threshold: float = field(default_factory=lambda: _f("SIMILAR_THRESHOLD", 0.70))
     naver_cache_ttl_days: int = field(default_factory=lambda: _i("NAVER_CACHE_TTL_DAYS", 7))
 
+    # 후보 · 카드 (개인 설정으로 덮어씀)
+    margin_threshold: float = field(default_factory=lambda: _f("MARGIN_THRESHOLD", 0.30))      # 이 미만은 below_margin
+    daily_candidate_n: int = field(default_factory=lambda: _i("DAILY_CANDIDATE_LIMIT", 10))   # 카드로 보낼 N
+    llm_rejudge_top_n: int = field(default_factory=lambda: _i("LLM_REJUDGE_TOP_N", 10))       # N건 LLM 매칭 재판정 (0 = 끔)
+    daily_llm_cap: int = field(default_factory=lambda: _i("DAILY_LLM_CAP", 50))
+    collect_at: str = field(default_factory=lambda: _s("BATCH_COLLECT_AT", "02:00"))
+    notify_at: str = field(default_factory=lambda: _s("BATCH_NOTIFY_AT", "08:00"))
+    telegram_bot_token: str = field(default_factory=lambda: _s("TELEGRAM_BOT_TOKEN"))
+    telegram_chat_id: str = field(default_factory=lambda: _s("TELEGRAM_CHAT_ID"))
+
     # 즉시 분석
     instant_daily_limit: int = field(default_factory=lambda: _i("INSTANT_ANALYSIS_DAILY_LIMIT", 50))
 

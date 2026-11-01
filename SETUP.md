@@ -291,6 +291,22 @@ v3 구현 1단계(DESIGN.md 10장). 스키마·RLS·시드·첫 계정을 만든
 .venv\Scripts\python -m app.pipeline.domestic --pending --limit 20      # 첫 실행 때 CLIP 모델(~350MB) 자동 다운로드
 ```
 torch 없이도 `domestic` 은 돈다(pHash 동일 사진 + 용량 숫자 규칙만, 정밀도 낮음). 회사망 프록시면 `$env:HF_ENDPOINT` / `$env:HTTPS_PROXY` 를 지정한다.
+
+### 5-4-2. 점수 · 텔레그램 카드 · 배치 (5단계)
+텔레그램 봇을 만들고(@BotFather) 토큰과 본인 chat_id 를 넣는다 — `.env.dev` 의 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`, 또는 SQL Editor 로 개인 시크릿에:
+```sql
+insert into user_secrets (user_id, name, value) values (auth.uid(), 'telegram_bot_token', '<토큰>');
+update profiles set telegram_chat_id = '<chat_id>' where user_id = auth.uid();
+```
+```powershell
+.venv\Scripts\python -m app.pipeline.scoring            # ④ 시장 신호 → 내 점수 · 후보
+.venv\Scripts\python -m app.pipeline.notify --dry-run   # 카드 텍스트만 (LLM · 발송 없음)
+.venv\Scripts\python -m app.pipeline.notify             # N건 로고 비전 · 재판정 · 텔레그램 발송
+.venv\Scripts\python -m app.telegram_poll               # 버튼 콜백 폴링 (한 PC 만 · Ctrl+C)
+.venv\Scripts\python -m app.worker run                  # ⓪~⑤ 한 번에 (배치 잠금)
+.venv\Scripts\python -m app.worker status
+.venv\Scripts\python -m app.worker schedule             # 매일 collect_at / notify_at
+```
 관심 카테고리는 관리자 웹(6단계) 전까지는 SQL Editor 로 넣는다:
 ```sql
 insert into source_categories (source_id, label_raw, url, canonical_category_id)

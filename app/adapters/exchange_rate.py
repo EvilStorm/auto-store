@@ -1,14 +1,14 @@
 """환율 어댑터. 수동 입력 없음.
 
-우선순위: 1) 한국수출입은행 API (키 필요)  2) 네이버 금융 시장지표 크롤링  3) open.er-api.com (키 없음)  4) 마지막 성공값(data/exchange_rates.json)
+우선순위: 1) 한국수출입은행 API (키 필요)  2) 네이버 금융 시장지표 크롤링  3) open.er-api.com (키 없음)  4) 마지막 성공값
+저장: 공용 Supabase exchange_rates(하루 1행/통화, 로그인 클라이언트가 있을 때) + 로컬 캐시 data/exchange_rates.json.
 JPY 는 100엔 기준 고시를 1엔 기준으로 바꿔 저장한다.
 """
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from bs4 import BeautifulSoup
@@ -29,7 +29,9 @@ class Rates:
     fetched_at: str
 
     def is_stale(self) -> bool:
-        return datetime.now() - datetime.fromisoformat(self.fetched_at) > timedelta(hours=STALE_HOURS)
+        t = datetime.fromisoformat(self.fetched_at.replace("Z", "+00:00"))
+        now = datetime.now(t.tzinfo) if t.tzinfo else datetime.now()
+        return now - t > timedelta(hours=STALE_HOURS)
 
 
 def _cache_path():
@@ -114,8 +116,32 @@ def _from_er_api() -> Rates | None:
     return Rates({k: round(v, 4) for k, v in out.items()}, "open_er_api", datetime.now().isoformat(timespec="seconds"))
 
 
-def get_rates(force_refresh: bool = False) -> Rates:
-    cached = _load()
+# ── 공용 테이블 (v3) ──
+def _from_db(client) -> Rates | None:
+    try:
+        rows = client.rpc("latest_exchange_rates").execute().data or []
+    except Exception:
+        return None
+    out = {r["currency"]: float(r["rate_krw"]) for r in rows}
+    if not all(c in out for c in CURRENCIES):
+        return None
+    oldest = min(r["fetched_at"] for r in rows if r["currency"] in CURRENCIES)
+    return Rates(out, rows[0]["source"], oldest)
+
+
+def _to_db(client, r: Rates) -> None:
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        client.table("exchange_rates").insert(
+            [{"currency": k, "rate_krw": v, "source": r.source, "fetched_at": now} for k, v in r.rates.items() if k in CURRENCIES]
+        ).execute()
+    except Exception:
+        pass
+
+
+def get_rates(force_refresh: bool = False, client=None) -> Rates:
+    """client(로그인) 가 있으면 공용 테이블을 먼저 보고, 신선한 행이 없을 때만 외부에서 받아 공용에 쓴다 (DESIGN ⓪)."""
+    cached = (_from_db(client) if client is not None else None) or _load()
     if cached and not force_refresh and not cached.is_stale():
         return cached
     for fn in (_from_eximbank, _from_naver_finance, _from_er_api):
@@ -124,7 +150,12 @@ def get_rates(force_refresh: bool = False) -> Rates:
         except Exception:
             r = None
         if r:
-            _save(r)
+            if client is not None:
+                _to_db(client, r)
+            try:
+                _save(r)
+            except Exception:
+                pass
             return r
     if cached:
         return Rates(cached.rates, "last_known", cached.fetched_at)

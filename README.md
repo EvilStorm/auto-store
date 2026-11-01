@@ -168,6 +168,15 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 - `app/pipeline/domestic.py` ③ 국내 조회기: 검색어별 공용 캐시(`naver_queries`, TTL 7일) → 미스만 크롤링 → `naver_items` upsert → 소스·썸네일 `images`(nv_mid 당 1회) → `judge()`(CLIP 코사인 ≥0.95 정확 / ≥0.70 유사, 용량 불일치면 강등, 동일 사진이면 정확, CLIP 없으면 pHash·숫자 규칙). **실측(텀블러 5장): 같은 상품 다른 컷 0.61, 다른 브랜드 카탈로그 컷 0.85 → CLIP 은 유사·참고치 담당, "정확"은 pHash·N건 LLM 재판정** (DESIGN 11장) → `matches` · `market_signals`(정확/유사 수 · 동일 사진 판매자 · 리뷰 · 찜 · 판매처 · 가격 평균/중앙값/최저 · 최빈 cat_id). `python -m app.pipeline.domestic --item <id> | --pending`
 - 설정: `EXACT_THRESHOLD` · `SIMILAR_THRESHOLD` · `NAVER_CACHE_TTL_DAYS`, user_settings 병합. 테스트 31개.
 
+## 8-0-3. 구현 5단계 (2026-11-01): 개인 점수 · 후보 · 텔레그램 카드 · 잠금 · 스케줄
+
+- `app/pipeline/scoring.py` ④: `compute_economics()`(cost.py 식 승계, 순수 함수) — 공용 환율 × 내 배송 프로필·수수료 → 총원가·마진율·제안 판매가·점수(마진 + 경쟁 + 수요 대리값 − 리스크). 내 제외 규칙·거절 이력·등록 상품 제외 → `candidates`(candidate / below_margin)
+- `app/pipeline/notify.py` ⑤: 점수 상위 N건 → **N건만** 로고 비전(`images.logo_*`, pHash 캐시 → 같은 사진은 0회) → 감지 시 `rejected_1` + 승격 → 선택적 LLM 매칭 재판정(`llm_rejudge_top_n`, `matches.method=llm`) → 텔레그램 카드(이미지·원가·마진·경쟁·리뷰·점수 분해·매칭·링크) [승인][거절][보류] → 요약(LLM 호출 수·캐시 적중·비용) → `api_usage`
+- `app/adapters/telegram.py` Bot API(httpx) · `app/telegram_poll.py` 콜백 폴러(worker_leases 임대 PC만, 승인/거절/보류 → candidates, URL → analysis_requests 큐, /recent)
+- `app/worker.py` `run [--stage]` ⓪환율 → ①② → ③ → ④ → ⑤, `schedule`(APScheduler, collect_at/notify_at), `status`. 배치 잠금 RPC
+- 환율 어댑터가 공용 `exchange_rates` 를 먼저 보고 신선한 행이 없을 때만 외부 수집
+- 테스트 38개. **텔레그램 실발송·DB 흐름은 Supabase 적용 + 봇 토큰 뒤 검증.**
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

@@ -13,6 +13,7 @@ MERGE_FIELDS = (
     "naver_fee_rate", "payment_fee_rate", "fx_buffer_rate", "target_margin_rate",
     "price_basis", "same_image_seller_cap", "naver_top_n", "instant_daily_limit",
     "exact_threshold", "similar_threshold",
+    "margin_threshold", "daily_candidate_n", "llm_rejudge_top_n", "daily_llm_cap", "collect_at", "notify_at",
     "llm_provider", "llm_model",
 )
 
@@ -31,7 +32,12 @@ def defaults_from_env() -> dict:
         "payment_fee_rate": s.payment_fee_rate,
         "fx_buffer_rate": s.fx_buffer_rate,
         "target_margin_rate": s.target_margin_rate,
-        "margin_threshold": s.target_margin_rate,
+        "margin_threshold": s.margin_threshold,
+        "daily_candidate_n": s.daily_candidate_n,
+        "llm_rejudge_top_n": s.llm_rejudge_top_n,
+        "daily_llm_cap": s.daily_llm_cap,
+        "collect_at": s.collect_at,
+        "notify_at": s.notify_at,
         "forwarder_rates": ",".join(f"{kg:g}:{won}" for kg, won in s.forwarder_rate_table()),
         "price_basis": s.price_basis,
         "exact_threshold": s.exact_threshold,
