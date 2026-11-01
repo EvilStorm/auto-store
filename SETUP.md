@@ -309,6 +309,13 @@ update profiles set telegram_chat_id = '<chat_id>' where user_id = auth.uid();
 .venv\Scripts\python -m app.worker status
 .venv\Scripts\python -m app.worker schedule             # 매일 collect_at / notify_at
 ```
+**1688 로그인 슬라이더가 계속 "验证不通过" 로 떨어질 때**: 자동화 브라우저에서는 캡차가 통과되지 않는 경우가 많다. 이 프로젝트는 캡차를 우회하지 않는다 — 대신 **사람이 일반 Chrome 을 같은 프로필 폴더로** 띄워 직접 로그인하면 쿠키가 그 폴더에 남고, 이후 수집기가 그 세션을 그대로 쓴다. (Playwright 창은 모두 닫은 뒤에)
+```powershell
+& "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --user-data-dir="D:\workspace\auto-store\data\profiles\1688" https://login.1688.com/member/signin.htm
+```
+그 창에서 로그인(휴대폰 인증 · 슬라이더)을 끝내고 **Chrome 을 완전히 닫은 뒤** `--pages 1` 수집을 돌려 `Blocked` 없이 카드가 나오는지 본다. Chrome 경로가 다르면 `(Get-Command chrome).Source` 또는 Edge(`msedge.exe` + `PLAYWRIGHT_CHANNEL=msedge`)로 같은 방법.
+로그인 없이도 **목록 수집(①~⑤ 발굴)은 대체로 된다**(비로그인 검색 허용, 간헐적으로 0건 · 차단 → 그날 건너뜀). 로그인이 꼭 필요한 건 상세 수집(⑥)이다.
+
 관심 카테고리는 관리자 웹(6단계) 전까지는 SQL Editor 로 넣는다:
 ```sql
 insert into source_categories (source_id, label_raw, url, canonical_category_id)

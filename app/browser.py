@@ -49,7 +49,12 @@ def launch(pw, *, headless: bool = True, **kw):
 
 
 def launch_persistent(pw, profile_dir: Path | str, *, headless: bool = True, **kw):
-    """pw.chromium.launch_persistent_context 와 같되 폴백 포함. 프로필 폴더는 만들어 둔다."""
+    """pw.chromium.launch_persistent_context 와 같되 폴백 포함. 프로필 폴더는 만들어 둔다.
+
+    자동화 브라우저에서는 알리바바 계열 로그인 캡차가 통과되지 않는 경우가 많다. 이 프로젝트는 캡차를 우회하지 않는다:
+    프로필 폴더가 일반 Chrome 의 --user-data-dir 과 호환되므로, 사람이 Playwright 없이 Chrome 을 같은 폴더로 띄워
+    직접 로그인해 두면 이후 수집은 그 세션을 그대로 쓴다 (SETUP.md 5-4-1). 로그인 없이도 목록 수집은 대체로 된다.
+    """
     Path(profile_dir).mkdir(parents=True, exist_ok=True)
     return _try(lambda **k: pw.chromium.launch_persistent_context(str(profile_dir), headless=headless, **k), **kw)
 
