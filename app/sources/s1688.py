@@ -37,12 +37,41 @@ JS_CARDS = r"""() => {
     if(seen.has(m[1])) continue; seen.add(m[1]);
     const img=card.querySelector('img');
     let src=img?(img.currentSrc||img.src||img.getAttribute('data-src')||''):'';
-    const titleEl=card.querySelector('[title]');
-    const title=(titleEl&&titleEl.getAttribute('title'))||(img&&img.alt)||'';
-    out.push({id:m[1], href:'https://detail.1688.com/offer/'+m[1]+'.html', text:t, img:src, title:title.trim()});
+    // 제목 후보를 전부 모아 파이썬에서 고른다 (1688 은 회사명에 title 속성이 붙어 있어 첫 [title] 을 집으면 회사명이 나온다)
+    const cands=[];
+    const push=(s)=>{ s=(s||'').replace(/\s+/g,' ').trim(); if(s&&s.length>=4&&!cands.includes(s)) cands.push(s); };
+    push(a.getAttribute('title')); push(a.innerText);
+    for (const el of card.querySelectorAll('a[href*="detail.1688.com/offer/"]')) { push(el.getAttribute('title')); push(el.innerText); }
+    if(img){ push(img.alt); push(img.getAttribute('title')); }
+    for (const el of card.querySelectorAll('[title]')) push(el.getAttribute('title'));
+    for (const el of card.querySelectorAll('h1,h2,h3,h4,p,span,div')) { const s=(el.innerText||'').trim(); if(s.length>=8&&s.length<=120&&!s.includes('¥')&&el.children.length===0) push(s); }
+    out.push({id:m[1], href:'https://detail.1688.com/offer/'+m[1]+'.html', text:t, img:src, titles:cands.slice(0,12)});
   }
   return out;
 }"""
+
+JS_DIAG = r"""() => ({url:location.href, title:document.title, offers:document.querySelectorAll('a[href*="detail.1688.com/offer/"]').length,
+  imgs:document.images.length, text:(document.body?document.body.innerText:'').replace(/\s+/g,' ').slice(0,400)})"""
+
+COMPANY_RE = re.compile(r"(公司|有限公司|厂|工厂|商行|商店|专营店|旗舰店|批发部|经营部|合作社|工作室|贸易|实业|店)$")
+PRICE_RE = re.compile(r"[¥￥]\s*\d")
+
+
+def is_company_name(s: str) -> bool:
+    s = s.strip()
+    return bool(COMPANY_RE.search(s)) and len(s) <= 40
+
+
+def pick_title(cands: list[str], text: str = "") -> tuple[str, str]:
+    """(상품명, 회사명). 회사명 패턴은 제외하고, 가격 · 판매량 문구가 아닌 가장 긴 후보를 상품명으로."""
+    company = next((c for c in cands if is_company_name(c)), "")
+    good = [c for c in cands if not is_company_name(c) and not PRICE_RE.search(c) and not re.search(r"(成交|起批|回头率|已售|销量)", c)]
+    if good:
+        return max(good, key=len)[:120], company
+    # 후보가 없으면 카드 텍스트에서 가격 앞부분
+    head = re.split(r"[¥￥]", text, 1)[0].strip()
+    head = re.sub(r"\s*(成交|起批|回头率).*$", "", head)
+    return (head[:120] if head and not is_company_name(head) else ""), company
 
 JS_DETAIL = r"""() => {
   const attrs={};
@@ -96,11 +125,16 @@ def card_to_listing(c: dict) -> RawListing | None:
     price_raw, tiers = parse_price(t)
     if not price_raw:
         return None
-    title = c.get("title") or t.split(" ¥")[0].split(" ￥")[0][:120]
+    cands = list(c.get("titles") or ([c["title"]] if c.get("title") else []))
+    title, company = pick_title(cands, t)
+    if not title:
+        return None
     img = c.get("img", "")
     img = re.sub(r"_\.(avif|webp)$", "", img)
     img = re.sub(r"\.(jpg|png)_\d+x\d+(?:q\d+)?\.(?:jpg|png)$", r".\1", img)   # 썸네일 접미사 제거 → 원본
     ext = {}
+    if company:
+        ext["company"] = company
     sales = parse_sales(t)
     if sales is not None:
         ext["sales"] = sales
@@ -172,6 +206,7 @@ class Adapter1688(SourceAdapter):
                     probe2 = (self.page.url + " " + (self.page.evaluate("document.body ? document.body.innerText.slice(0,3000) : ''") or "")).lower()
                     if not any(m.lower() in probe2 for m in BLOCK_MARKERS):
                         return
+            self._dump_debug("blocked")
             raise Blocked(f"1688 차단/로그인 페이지: {url[:120]}")
 
     def list(self, list_url: str, page: int = 1) -> list[RawListing]:
@@ -188,7 +223,42 @@ class Adapter1688(SourceAdapter):
             li = card_to_listing(c)
             if li:
                 out.append(li)
+        if not out:
+            self._dump_debug("list")
         return out
+
+    def _dump_debug(self, tag: str) -> None:
+        """카드 0건 등 이상 상황: URL · 제목 · 링크 수 · 본문 앞부분을 출력하고 스크린샷 · HTML 을 data/debug/ 에 남긴다."""
+        try:
+            from app.config import settings
+
+            d = self.page.evaluate(JS_DIAG)
+            print(f"[진단] url={d['url'][:120]}\n[진단] title={d['title'][:80]} · offer 링크 {d['offers']}개 · 이미지 {d['imgs']}장\n[진단] text={d['text'][:300]}")
+            out = settings.data_dir / "debug"
+            out.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            self.page.screenshot(path=str(out / f"1688_{tag}_{stamp}.png"), full_page=False)
+            (out / f"1688_{tag}_{stamp}.html").write_text(self.page.content(), encoding="utf-8")
+            print(f"[진단] 저장 {out / f'1688_{tag}_{stamp}.png'} · .html")
+        except Exception as e:
+            print(f"[진단] 실패 {type(e).__name__}: {e}")
+
+    def login(self, wait_seconds: int = 600) -> bool:
+        """헤드풀 창에서 사용자가 직접 로그인하도록 두고, Enter 또는 로그인 감지까지 기다린다. 프로필에 쿠키가 남는다."""
+        if not self.headed:
+            raise RuntimeError("--login 은 --headed 와 함께")
+        self.page.goto("https://login.1688.com/member/signin.htm", wait_until="domcontentloaded", timeout=60000)
+        print("창에서 1688 에 로그인하세요 (QR · 휴대폰 인증 · 슬라이더). 끝나면 이 콘솔에서 Enter 를 누르세요.")
+        try:
+            input()
+        except EOFError:
+            self.page.wait_for_timeout(wait_seconds * 1000)
+        self.page.goto("https://www.1688.com/", wait_until="domcontentloaded", timeout=60000)
+        self.page.wait_for_timeout(2500)
+        body = (self.page.evaluate("document.body ? document.body.innerText.slice(0, 5000) : ''") or "")
+        ok = any(k in body for k in ("退出", "我的1688", "我的阿里", "消息")) and "登录" not in body[:200]
+        print("로그인 확인:", "성공 (프로필 저장됨)" if ok else "확인 못 함 — 창에서 로그인 상태를 다시 보세요")
+        return ok
 
     def detail(self, item_url: str) -> RawDetail:
         time.sleep(random.uniform(*self.delay_range))
@@ -226,13 +296,20 @@ def main(argv=None) -> int:
     except Exception:
         pass
     ap = argparse.ArgumentParser(description="1688 어댑터 테스트")
-    ap.add_argument("url")
+    ap.add_argument("url", nargs="?")
     ap.add_argument("--profile", default="1688")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--login", action="store_true", help="창을 띄워 로그인만 하고 프로필 저장 (--headed 필요)")
     ap.add_argument("--pages", type=int, default=1)
     ap.add_argument("--detail", action="store_true", help="상세 1건")
     ap.add_argument("-o", "--out", help="JSON 저장 경로 (규칙 생성기 샘플)")
     a = ap.parse_args(argv)
+    if a.login:
+        with Adapter1688(profile_dir=settings.profiles_dir / a.profile, headed=True) as ad:
+            return 0 if ad.login() else 1
+    if not a.url:
+        ap.print_help()
+        return 1
     with Adapter1688(profile_dir=settings.profiles_dir / a.profile, headed=a.headed) as ad:
         if a.detail:
             rows = [ad.detail(a.url).to_dict()]
@@ -246,7 +323,8 @@ def main(argv=None) -> int:
         print(f"저장 {a.out} ({len(rows)}건)")
     else:
         for r in rows[:5]:
-            print(json.dumps({k: r[k] for k in ("item_id", "title_raw", "price_raw", "moq", "image_url")}, ensure_ascii=False))
+            print(json.dumps({"item_id": r["item_id"], "title_raw": r["title_raw"], "price_raw": r["price_raw"], "moq": r["moq"],
+                              "company": (r.get("extra") or {}).get("company"), "sales": (r.get("extra") or {}).get("sales")}, ensure_ascii=False))
         print(f"… 총 {len(rows)}건")
     return 0
 
