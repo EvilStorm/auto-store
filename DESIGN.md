@@ -17,6 +17,7 @@
 | AI 사용 | 상품 1건마다 LLM 3회 | **발굴 단계 0회/건.** 추출은 내장 어댑터, 정규화는 사전·규칙, 매칭은 CLIP 이미지 유사도·이미지 해시·속성 규칙. LLM은 카드로 나갈 N건의 로고 확인과 사전 미등록 표기 제안에만 |
 | CLIP | 운영 후 개선 | **MVP.** 매칭의 주력 |
 | 비밀값 보관 | .env 또는 화면(암호화) | 개인 시크릿은 계정 소유 행(RLS) + Supabase Vault. **service_role 키는 PC에 두지 않음**(시드·마이그레이션 전용) |
+| AI 결과 재사용 | 없음 (호출마다 새로) | **입력 해시 캐시(공용 `ai_results`)**: 같은 입력이면 요청자가 달라도 재호출 없음. **규칙 세트(공용 `rulesets`)**: AI는 소스×카테고리별 추출·정규화 규칙을 1회 만들고, 실행은 규칙 엔진이 한다 (3.5 · 3.6) |
 
 ---
 
@@ -48,7 +49,9 @@
 | 등록 | 네이버 일괄등록 엑셀 양식으로 산출. 이미지는 Supabase Storage 공개 URL |
 | 실행 주기 | 하루 1회 배치. 시각은 개인 설정(기본 02:00 / 08:00). 같은 계정의 PC가 둘이면 **배치 잠금**으로 한 PC만 실행 |
 | 하루 건수 | 세 가지를 구분한다. **수집 규모**(관심 카테고리별 페이지 수) / **분석 상한**(하루 네이버 조회·LLM 호출 상한) / **카드 건수 N**(기본 10). 전부 개인 설정 |
-| 브랜드·모조품 | 1단계 텍스트(1688 "品牌" 속성·제목 vs 블랙리스트)는 규칙으로 전수 적용. 2단계 이미지 로고는 **카드로 나갈 N건에만 비전 LLM** |
+| 브랜드·모조품 | 1단계 텍스트(1688 "品牌" 속성·제목 vs 블랙리스트)는 규칙으로 전수 적용. 2단계 이미지 로고는 **카드로 나갈 N건에만 비전 LLM**. 결과는 이미지 pHash 키로 공용 캐시 → 판매자가 사진을 바꾸기 전까지 같은 이미지는 다시 안 본다 |
+| AI 결과 캐시 | **모든 AI 호출은 (용도 · 모델 · 입력 해시)를 키로 공용 `ai_results`에 저장하고, 같은 키가 있으면 호출하지 않는다.** 요청자(계정)가 달라도 입력이 같으면 재사용. 이미지는 URL이 아니라 pHash로 키를 만든다. 지점별 자연 키(pHash · 표기 · URL+텍스트 해시)를 따로 두어 사람이 읽을 수 있게 한다 (3.6) |
+| 규칙 세트 | **AI는 블랙박스(규칙 세트)를 만들고, 실행은 프로그램이 한다.** 소스×카테고리별로 샘플 몇 페이지를 AI가 1회 분석해 추출·정규화·검색어 규칙을 **선언적 DSL(JSON)** 로 생성 → 샘플로 검증(커버리지) → admin 승인 → 공용 `rulesets` 활성. 런타임은 규칙 엔진만 돈다. 커버리지가 떨어지면(사이트 개편) 재생성. **LLM이 쓴 코드는 실행하지 않는다** (3.5) |
 | 식품 | 다루지 않음. item_type food 자동 제외 |
 | AI 제공자 | 텍스트 LLM(OpenAI 기본 / Claude / Gemini)·이미지 생성 선택. 키는 개인 시크릿 |
 | API 예산 | 월 예산(개인), 80% 경고, 100%에서 ⑦ 중단. 발굴 단계는 예산을 거의 쓰지 않음 |
@@ -154,14 +157,15 @@
    나머지는 관리자 "후보(미전송)"에서 조회
 ```
 
-**AI가 쓰이는 지점 (전체 목록):**
-1. ⑤ 카드로 나갈 N건의 이미지 로고 확인 (비전, 하루 ≈ N회)
-2. ② 사전 미등록 표기의 표준 카테고리·코드 제안 (하루 상한, 사전이 차면 0에 수렴)
-3. ⑦ 승인된 상품의 한국어 상품명·상세 설명·옵션 정리 (승인 건수만큼)
-4. 즉시 분석에서 **미등록 사이트** URL의 범용 추출 (등록 소스는 어댑터 경로라 0회)
-5. 선택: N건의 매칭 LLM 재판정 (개인 설정으로 on/off)
+**AI가 쓰이는 지점 (전체 목록) — 전부 공용 `ai_results` 캐시를 거친다 (같은 입력이면 호출 없음):**
+1. **규칙 세트 생성·재생성** (3.5): 소스×카테고리당 설정 때 1회, 커버리지가 떨어졌을 때 1회. 상품마다가 아니다
+2. ⑤ 카드로 나갈 N건의 이미지 로고 확인 (비전). 키 = 이미지 pHash → 같은 사진은 다음 날·다른 계정에서도 다시 안 봄
+3. ② 규칙 세트와 사전 모두에 없는 표기의 표준 카테고리·코드 제안 (하루 상한, 묶어서 1회, `mapping_queue` 유니크로 같은 표기 재제안 없음). 승인되면 사전·규칙에 들어가 0에 수렴
+4. ⑦ 승인된 상품의 한국어 상품명·상세 설명·옵션 정리 (승인 건수만큼). 상품명·옵션 초안은 source_item 키로 공용 캐시
+5. 즉시 분석에서 **미등록 사이트** URL의 범용 추출. 키 = (URL, 페이지 텍스트 해시) → 페이지가 안 바뀌었으면 재추출 없음 (등록 소스는 어댑터 경로라 0회)
+6. 선택: N건의 매칭 LLM 재판정 (개인 설정으로 on/off). 결과는 공용 `matches.method='llm'`
 
-하루 발굴 200건 기준 LLM 호출 ≈ 10~30회(수백 원). v2 설계의 600회 대비 1/20 이하.
+하루 발굴 200건 기준 **첫날** LLM 호출 ≈ 규칙 생성 1~2회 + 로고 N회 + 제안 1회 ≈ 10~30회(수백 원). **둘째 날부터**는 새로 나타난 상품 중 카드에 오르는 것의 로고 확인만 → 수 회. v2 설계의 600회/일 대비 1/20 이하.
 
 ### 승인 이후 (⑥~⑨) — v2와 동일, 승인된 상품만
 
@@ -190,6 +194,7 @@ URL → 소스 판별 (공용 sources.base_url 매칭)
    │
    ▼
 개인 analysis_requests 에 이력 · 같은 URL 재요청 시 이전 결과와 나란히 · 하루 상한(개인 설정)
+미등록 사이트 재요청: 페이지 텍스트 해시가 같으면 공용 page_extracts 의 이전 추출을 재사용 (LLM 0회) · 가격만 바뀌었으면 추출만 다시
 ```
 
 ### 주문 이후: 주문 처리 · 정산 — v2와 동일 (개인 orders · order_costs)
@@ -242,7 +247,58 @@ RawDetail:   RawListing + options[], images[], attrs_full, package_weight_raw
 
 ### 3.4 새 사이트를 붙이는 절차 (v2와 동일)
 
-1. 소스 등록(admin, 공용) 2. 내 소스 켜기 + 로그인 프로필 저장(개인, PC별) 3. 관심 카테고리 등록(개인) 4. 1페이지 테스트 5. 활성화
+1. 소스 등록(admin, 공용) 2. 내 소스 켜기 + 로그인 프로필 저장(개인, PC별) 3. 관심 카테고리 등록(개인) 4. 1페이지 테스트 → **규칙 세트 생성**(3.5, LLM 1회) 5. 활성화
+
+### 3.5 규칙 세트 — AI는 블랙박스를 만들고, 실행은 프로그램이 한다
+
+상품마다 AI를 부르면 비용·속도·차단 셋 다 문제다. 그런데 한 사이트의 한 카테고리 안에서 표기 패턴은 반복된다(제목 앞의 광고어, 속성표의 열 이름, 가격 구간 표기, 옵션 표기). 그 패턴을 **한 번 배워 프로그램으로 굳히면** 이후 수백 건은 비용 0으로 돈다. v2의 "LLM 추출 어댑터 → 셀렉터 제안 → 범용 CSS로 승격"(3.2)이 이 생각의 특수 사례였고, v3는 추출뿐 아니라 정규화·검색어까지 같은 틀로 넓힌다.
+
+**규칙 세트는 코드가 아니라 선언적 DSL(JSON)이다.** 연산은 고정된 몇 가지뿐이고 규칙 엔진(`taxonomy/engine.py`)이 해석한다. LLM이 쓴 파이썬을 실행하지 않는다 — 보안(임의 코드 실행), 디버깅(무엇이 왜 틀렸는지), 버전 관리(사이트가 바뀌면 어디를 고치나) 세 가지 이유다. 사람이 쓴 어댑터 코드(`sources/s1688.py`)는 코드로 두되, 그 안의 셀렉터·JSON 경로·정규식은 규칙 세트에서 읽는다.
+
+| 연산 | 하는 일 | 예 |
+|---|---|---|
+| `select` | CSS 셀렉터 / JSON 경로로 값 추출 | `{"op":"select","path":"$.data.offerList[*].subject","as":"title_raw"}` |
+| `regex` | 정규식 그룹 추출 (여러 패턴 순서대로) | 제목에서 용량 `(\d+(?:\.\d+)?)\s*(ml|L|oz)` → `capacity` |
+| `unit` | 단위 정규화 | `40oz` → `1183ml`, `1.18L` → `1180ml` |
+| `strip` | 스톱워드·광고어 제거 (공용 사전 + 카테고리 추가분) | `跨境 爆款 2025新款 不锈钢保温杯` → `不锈钢保温杯` |
+| `map` | 사전 참조로 코드화 | `材质: 不锈钢` → `material_code = stainless` |
+| `template` | 검색어 조합 | `"{keyword_ko} {capacity}"` → `"스테인리스 텀블러 1180ml"` |
+| `default` | 카테고리 상속값 | `item_type`, `default_weight_g`, 요건 기본 |
+| `flag` | 조건 플래그 | 제목에 `充电|电池|USB` → `maybe_electronics` |
+
+**종류(kind)**: `extract`(목록·상세 셀렉터/JSON 경로) · `normalize`(제목 정리·속성 추출·재질/품목 코드·요건 기본) · `query`(검색어 템플릿 2~3개) · `match_hints`(매칭 때 비교할 핵심 숫자 속성: 용량·치수). **범위와 상속**: 소스 전체 기본 세트 → 카테고리별 오버라이드. 60개(2소스 × 30카테고리)를 전부 만들지 않고, 기본 세트의 커버리지가 모자란 카테고리만 덧씌운다.
+
+**생성 흐름 (LLM 1회):**
+1. 샘플 수집 — 관심 카테고리 2페이지 ≈ 40건 RawListing + 상세 3건 (어댑터의 "1페이지 테스트"가 이 샘플을 만든다)
+2. LLM 호출 1회 — 샘플 + DSL 스키마 + 공용 사전의 코드 목록 + 상위 규칙 세트(있으면) → 규칙 세트 초안 + 각 규칙의 근거 한 줄. 이 호출도 `ai_results` 캐시를 거친다
+3. 검증 — 엔진으로 샘플 전체를 실행해 **필드별 커버리지**(제목 정리 100%, 용량 추출 85%, 재질 코드 78%…)와 홀드아웃 1페이지 결과를 낸다. 규칙이 샘플에서 틀리면 그 자리에서 보인다
+4. 승인 — admin이 커버리지 표와 실패 예시를 보고 승인(커버리지 ≥ 기준이면 자동 승인 옵션). `status = active`, `version + 1`, 이전 버전은 `retired`
+5. 런타임 — ②는 active 규칙 세트만 쓴다. 규칙으로 못 잡은 표기는 사전(3.3) → 확인 큐 순서로 떨어진다
+
+**드리프트(사이트 개편) 감지**: 배치마다 규칙 세트별 커버리지를 `rulesets.coverage_json`에 기록한다. 2회 연속 기준(기본 80%) 미달이면 `needs_regen` 플래그 + 관리자 알림 → 새 샘플로 재생성(LLM 1회). "셀렉터가 깨졌는데 며칠 모르고 지나가는" 사고를 이걸로 막는다.
+
+**비용**: 소스×카테고리당 생성 1회 + 가끔 재생성. 하루 수백 건 정규화는 0. **한계**: 규칙은 "패턴"을 잡는다. 상품 개별 판단(이 둘이 같은 상품인가, 이 사진에 로고가 있나)은 규칙이 아니라 모델(CLIP)·비전 + 캐시(3.6)가 맡는다.
+
+### 3.6 AI 결과 캐시 — 같은 입력에는 다시 묻지 않는다
+
+**원칙**: 모든 AI 호출은 `(purpose, model, input_hash)`를 키로 공용 `ai_results`에 저장하고, 같은 키가 있으면 호출하지 않고 저장된 출력을 돌려준다. 요청한 계정이 달라도 같다 — "같은 입력이면 같은 답"은 사실이라 공용이 정당하다.
+
+- **키 만들기**: `input_hash = sha256(purpose@프롬프트버전 | model | 정규화한 프롬프트 텍스트 | 이미지 pHash 목록)`. 이미지는 **URL이 아니라 pHash**로 넣는다 — 판매자가 사진을 바꾸지 않았으면 CDN 주소가 달라도, 다른 상품 페이지에 같은 사진이 쓰여도 같은 키다. 프롬프트 템플릿이 바뀌면 `purpose`의 버전을 올려 자연히 새 키가 된다.
+- **구현 위치**: `adapters/llm/base.py`의 `complete_json`이 먼저 캐시를 보고, 적중이면 출력을 돌려주며 `hits + 1`, `api_usage`에는 비용 0으로 기록. 미스면 호출 후 저장. 파이프라인 코드는 캐시를 모른다.
+- **자연 키**: 해시만으로는 사람이 못 읽으니 지점별로 읽을 수 있는 키를 함께 둔다.
+
+| 지점 | 자연 키 | 저장 위치 |
+|---|---|---|
+| 로고 비전 확인 | 이미지 pHash | `images.logo_checked_at · logo_detected · logo_reason` |
+| 규칙 세트 생성 | (source_id, category_id, 샘플 해시) | `rulesets` (version) |
+| 표기 제안 | (kind, term, lang) | `mapping_queue` 유니크 |
+| 미등록 사이트 추출 | (url, 텍스트 해시) | `page_extracts` |
+| 상품명·옵션 한국어 초안 | source_item_id | `source_item_ko_drafts` |
+| 매칭 재판정 | (source_item_id, 후보 nv_mid 집합 해시) | `matches.method = 'llm'` |
+
+- **무효화**: TTL이 없다 — 입력이 같으면 답도 같다. 모델이나 프롬프트 버전이 바뀌면 키가 달라져 자연히 재계산된다. 판매자가 사진을 바꾸면 pHash가 바뀌어 재확인된다.
+- **예산 귀속**: 캐시 적중은 공용 이득이지만 실제 호출 비용은 호출한 계정의 `api_usage`에만 쌓인다.
+- **재분석이 다시 도는 조건은 네 가지뿐**: 소스 가격·옵션 변동, 사전 또는 규칙 세트 버전 상승, 네이버 캐시 TTL 만료, 대표 이미지 pHash 변화. 그 외에는 저장된 데이터로 ④ 점수만 다시 계산한다.
 
 ---
 
@@ -343,8 +399,9 @@ create policy admin_delete  on naver_items for delete to authenticated using (is
 | **title_stopwords** | term, lang |
 | **requirements** | item_type, status(pass/required/excluded), reason, docs |
 | **naver_categories** | cat_id, path, fetched_at |
-| **mapping_queue** | kind, term, lang, source_id, sample_item_id, suggested_id_or_code, confidence, status(pending/approved/rejected), created_by |
+| **mapping_queue** | kind, term, lang, source_id, sample_item_id, suggested_id_or_code, confidence, status(pending/approved/rejected), created_by — `unique(kind, term, lang)` 로 같은 표기 재제안 없음 |
 | **dict_meta** | dict_version, updated_at — 사전 변경 시 +1 |
+| **rulesets** | id, source_id, canonical_category_id(null = 소스 기본), kind(extract/normalize/query/match_hints), version, rules_json(DSL), rationale_json, sample_item_ids[], coverage_json(필드별 %), status(draft/active/retired/needs_regen), generated_by(llm/manual), approved_by, created_at — 3.5 |
 
 ### 5.2 공용 수집 데이터 (워커 적재)
 
@@ -352,13 +409,16 @@ create policy admin_delete  on naver_items for delete to authenticated using (is
 |---|---|
 | **source_items** | id, source_id, source_item_id (유니크 쌍), url, title_raw, lang, price_tiers_json, currency, moq, main_image_url, category_raw, attrs_raw_json, weight_raw, first_seen_at, last_seen_at, last_price_src, sold_out, created_by |
 | **source_items_normalized** | source_item_id (PK), dict_version, title_clean, key_numbers_json(용량·치수), material_code, item_type, canonical_category_id, search_queries[], brand_text_hit, excluded_reason(null/food/cosmetics/brand_text/…), mapping_pending(bool), normalized_at |
-| **images** | id, kind(source/naver), ref_id(source_item_id 또는 nv_mid), url, phash(bigint), **clip vector(512)**, fetched_at |
+| **images** | id, kind(source/naver), ref_id(source_item_id 또는 nv_mid), url, phash(bigint), **clip vector(512)**, fetched_at, logo_checked_at, logo_detected, logo_reason — 로고 비전 결과는 pHash 키로 1회 |
 | **naver_queries** | query (PK), fetched_at, nv_mids[], blocked, created_by — TTL 캐시 키 |
 | **naver_items** | nv_mid (PK), title, price, shipping_krw, rating, review_count, wish_count, seller_count, mall, link, image_url, cat_id, kind(catalog/store), is_ad, fetched_at, created_by |
 | **matches** | source_item_id, nv_mid, relation(exact/similar), method(clip/rule/llm), similarity, matched_numbers_json, reason, computed_at |
 | **market_signals** | source_item_id (PK), exact_count, similar_count, total_results, same_image_sellers, review_avg, review_top, wish_top, seller_count_max, price_mean, price_median, price_min, basis_type(exact/similar), naver_cat_id, demand_trend_pct(null), computed_at |
 | **source_item_details** | source_item_id (PK), options_json, images[], attrs_full_json, package_weight_g, fetched_at — ⑥에서 채움 |
 | **exchange_rates** | currency, rate_krw, source, fetched_at (하루 1행/통화) |
+| **ai_results** | purpose(버전 포함), model, input_hash (유니크), output_json, est_cost_krw, hits, created_by, created_at — 3.6. 모든 LLM 호출의 캐시 |
+| **page_extracts** | url, text_hash (유니크 쌍), raw_json(RawDetail), extracted_at, created_by — 미등록 사이트 즉시 분석의 추출 캐시 |
+| **source_item_ko_drafts** | source_item_id (PK), title_ko_options[], options_ko_json, generated_at — ⑦ 상품명·옵션 한국어 초안 (설명문은 개인) |
 
 ### 5.3 개인 데이터 (RLS `user_id = auth.uid()`)
 
@@ -407,7 +467,8 @@ v2의 `collected → normalized → filtered_out → matched → below_margin`�
 - 하루 상한: `user_sources.daily_cap`(소스 요청 수) + `user_settings.daily_lookup_cap`(네이버 조회 수). 둘 중 먼저 닿으면 당일 중단하고 요약에 표시.
 
 ### ② 사전 정규화기
-- LLM 없이 결정적으로 돈다. 입력이 같고 사전이 같으면 결과가 같다 → 공용 저장이 정당하다.
+- LLM 없이 결정적으로 돈다. 입력이 같고 규칙·사전이 같으면 결과가 같다 → 공용 저장이 정당하다.
+- 실행 순서는 **규칙 세트(active, 카테고리 → 소스 기본 상속) → 공용 사전 → 확인 큐**다. 규칙 엔진이 `extract`·`normalize`·`query` 세트를 적용해 제목 정리·핵심 숫자·재질/품목 코드·검색어를 만들고, 규칙이 못 잡은 표기만 사전을 찾고, 사전에도 없으면 큐로 보낸다. 배치마다 규칙 세트별 커버리지를 기록해 드리프트를 본다(3.5).
 - 숫자·단위 추출 정규식은 `taxonomy/units.py`에 모은다(ml/L/oz/cm/mm/inch/g/kg/W/mAh/매/개입 등). 추출 결과가 검색어와 매칭 규칙 둘 다에 쓰인다.
 - 검색어 조합 규칙: `[표준 카테고리 키워드 1] + [핵심 숫자 1~2]`, `[키워드 2] + [재질 한국어]`. 관심 카테고리의 `extra_keywords_ko`가 있으면 우선. 최대 3개, 각 20자 이내.
 - 사전에 없는 재질·분류 표기는 `mapping_queue`에 넣고 `mapping_pending = true`. **LLM 제안은 `daily_llm_cap` 안에서 하루 한 번 묶어서**(미등록 표기 20개를 한 호출에) 요청한다. 제안이 없어도 상품은 카테고리 상속값으로 ③까지 진행하되, item_type을 몰라 요건 판정이 불가하면 카드에 "요건 미확정" 배지.
@@ -451,7 +512,7 @@ v2의 `collected → normalized → filtered_out → matched → below_margin`�
 - 결과는 `candidates` 1행(run_date 당 상품 1건). 기준 미달은 `below_margin`.
 
 ### ⑤ 1차 알림
-- 점수순 상위 N. **N건에만** 비전 LLM으로 로고 확인(`brand_vision_checked = true`). 감지되면 `rejected_1(brand)` + `rejections`에 기록, 다음 순위 승격(최대 2N건까지 확인).
+- 점수순 상위 N. **N건에만** 비전 LLM으로 로고 확인 — 단, 대표 이미지 pHash로 공용 `images.logo_*`를 먼저 보고, 이미 확인된 이미지면 호출 없이 그 결과를 쓴다(다음 날·다른 계정 모두). 결과는 `images`에 저장하고 후보에는 `brand_vision_checked = true`만 표시. 감지되면 `rejected_1(brand)` + `rejections`에 기록, 다음 순위 승격(최대 2N건까지 확인).
 - 카드: 이미지 · `[1688 · CN]` 배지 · 원가(¥·₩) · 마진율 · 제안 판매가 · 경쟁(정확 N · 유사 N · 동일 이미지 판매자 N · 판매처 최대 N) · 리뷰(최대) · 근거("이미지 유사도 0.93 · 용량 500ml 일치") · 주의 플래그 · 네이버 링크 상위 2개.
 - 요약에 "오늘 LLM 호출 N회 · 추정 비용 N원"을 넣어 AI 사용이 보이게 한다.
 
@@ -503,15 +564,15 @@ auto-store/
 │   │   ├── base.py · fetch.py        # 어댑터 계약 · 범용 스냅샷(현 코드)
 │   │   ├── s1688.py                  # 1688 내장 어댑터 (목록·상세·차단 감지)   ← 발굴 MVP 핵심
 │   │   └── aliexpress.py · generic_css.py · llm_extract.py   (2차)
-│   ├── taxonomy/                 # 사전 조회(캐시), units.py(숫자·단위 정규식), stopwords, 검색어 조합
+│   ├── taxonomy/                 # engine.py(규칙 세트 DSL 실행) · generate.py(샘플 → LLM 1회 → 규칙 세트 초안 · 커버리지 검증) · 사전 조회(캐시) · units.py(숫자·단위) · stopwords · 검색어 조합
 │   ├── vision/                   # clip.py(임베딩·코사인), phash.py
 │   ├── adapters/
 │   │   ├── naver_crawl.py · exchange_rate.py     (현 코드)
-│   │   ├── llm/                      # base · openai_ · claude · gemini  (현 코드)
+│   │   ├── llm/                      # base(complete_json 이 ai_results 캐시를 먼저 봄) · openai_ · claude · gemini  (현 코드 + 캐시)
 │   │   ├── telegram.py · storage.py · image_gen/
 │   └── admin/                    # FastAPI 라우터·템플릿
 ├── supabase/
-│   ├── migrations/               # 001_auth_profiles.sql · 002_shared_reference.sql · 003_shared_harvest.sql · 004_personal.sql · 005_rls.sql · 006_rpc.sql
+│   ├── migrations/               # 001_auth_profiles.sql · 002_shared_reference.sql · 003_shared_harvest.sql · 004_personal.sql · 005_rls.sql · 006_rpc.sql · 007_rulesets_ai_cache.sql
 │   └── seed/                     # canonical_categories.csv · category_aliases.csv · attribute_aliases.csv · brand_blacklist.csv · title_stopwords.csv · requirements.csv · naver_categories.csv · shipping_profile_templates.json
 ├── selectors/1688.yaml
 ├── templates/ · output/
@@ -543,7 +604,7 @@ auto-store/
 
 1. **Supabase 뼈대**: 마이그레이션(공용·개인 스키마, RLS, RPC), 시드(사전 5종·요건표·네이버 카테고리·표준 카테고리 30개 안팎·배송 프로필 템플릿), `app.auth`·`app.db`·`config` 병합, 첫 로그인으로 user_settings 생성. 검증: 두 PC에서 로그인해 같은 설정이 보이는지
 2. **1688 어댑터 + 수집**: `s1688.py` 목록·상세, 로그인 프로필, 차단 감지, `collector.py` → source_items. 검증: 카테고리 1개 2페이지가 공용 테이블에 들어가는지
-3. **사전 정규화**: `taxonomy/`, `normalizer.py`, mapping_queue, admin 승인 화면(최소). 검증: 40건 중 사전으로 처리된 비율, 확인 큐에 쌓인 표기
+3. **규칙 엔진 · 규칙 생성기 · 사전**: `taxonomy/engine.py`(DSL 실행), `taxonomy/generate.py`(2단계의 1페이지 테스트 샘플 → LLM 1회 → 규칙 세트 초안 → 커버리지 검증), `rulesets` 승인 화면(최소), `normalizer.py`(규칙 → 사전 → 큐), `adapters/llm/base.py`에 `ai_results` 캐시. 검증: 카테고리 1개의 규칙 세트를 생성해 **커버리지 ≥ 80%**, 같은 샘플로 두 번째 생성 요청이 캐시 적중(LLM 0회), 40건 정규화에 LLM 0회
 4. **국내 조회·매칭**: `domestic.py` — 캐시, 크롤링(기존), `vision/`, matches, market_signals. 검증: 20건을 사람이 보고 exact/similar 오판율 측정 → 임계값 1차 조정
 5. **점수·카드**: `scoring.py`(cost.py 승계), `notify.py`, 텔레그램 봇·콜백, 잠금, 스케줄, 로고 비전 N건. 검증: 아침 카드 수신, [승인][거절]이 candidates에 반영
 6. **관리자 웹**: 로그인, 대시보드, 관심 카테고리, 후보 목록, 설정, 사전 관리
@@ -564,4 +625,6 @@ auto-store/
 - **개인 시크릿 보관**: Vault RPC vs RLS 컬럼. 처음엔 컬럼으로 시작해도 되지만, 공용 프로젝트에 다른 계정이 들어오기 전에 Vault로 옮긴다.
 - **데이터 양**: 4.3의 추정을 첫 달에 실측. 임베딩 보존 정책과 캐시 정리 주기를 그때 정한다.
 - **1688 로그인 프로필 비이식성**: 유일하게 PC에 묶이는 상태. 각 PC에서 1회 로그인하면 되지만, 로그인 만료 감지와 "다시 로그인하세요" 알림이 필요하다.
+- **규칙 세트 DSL의 표현력**: 8가지 연산으로 1688·알리의 표기를 얼마나 덮는지는 3단계에서 실측한다. 모자라면 연산을 추가하되(예: `split`, `lookup_table`), "LLM이 쓴 코드를 실행하지 않는다"는 선은 지킨다. 자동 승인 커버리지 기준(80% 출발)과 드리프트 판정 횟수(2회)도 실측으로 조정.
+- **규칙 세트 생성 품질**: LLM이 샘플에 과적합한 정규식을 만들 수 있다. 홀드아웃 1페이지 검증과 admin의 실패 예시 검토가 1차 방어, 운영 중 커버리지 하락이 2차 방어다.
 - v2에서 이어지는 것: 소스 간 동일 상품 임계값, 일본 B2B 회원 등급별 가격, 범용 CSS로 안 되는 사이트, 모드 C 이미지 모델, 쿠팡 가격 비교.
