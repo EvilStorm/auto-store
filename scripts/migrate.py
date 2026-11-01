@@ -53,6 +53,8 @@ def main(argv=None) -> int:
     with psycopg.connect(url, autocommit=False) as conn:
         with conn.cursor() as cur:
             cur.execute("create table if not exists public.schema_migrations (filename text primary key, applied_at timestamptz not null default now())")
+            # service_role 만 쓰는 기록 테이블. RLS 를 켜 두면 anon/authenticated 로는 보이지 않는다 (정책 없음 = 거부)
+            cur.execute("alter table public.schema_migrations enable row level security")
             conn.commit()
             cur.execute("select filename from public.schema_migrations")
             done = {r[0] for r in cur.fetchall()}
