@@ -72,7 +72,8 @@ def unit_price_at_moq(price_tiers: list[dict], moq: int) -> tuple[float, int]:
 
 
 def compute_economics(item: dict, signals: dict | None, rates: Rates, *, weight_g: float = 0.0, requirement_status: str = "pass",
-                      brand_hit: bool = False, local_shipping_src: float | None = None, shipping_profile: dict | None = None) -> Economics:
+                      brand_hit: bool = False, local_shipping_src: float | None = None, shipping_profile: dict | None = None,
+                      weight_source: str = "listed") -> Economics:
     """item: source_items 행(price_tiers_json · moq · currency). signals: market_signals 행 (없으면 마진 계산 생략)."""
     s = settings
     cur = item.get("currency") or "CNY"
@@ -117,6 +118,13 @@ def compute_economics(item: dict, signals: dict | None, rates: Rates, *, weight_
         domestic = signals.get({"mean": "price_mean", "median": "price_median", "min": "price_min"}.get(s.price_basis, "price_mean"))
         if signals.get("basis_type") == "similar":
             flags.append("price_is_reference")
+        basis_n = int(signals.get("exact_count") or 0) or int(signals.get("similar_count") or 0)
+        if domestic and basis_n < 3:
+            flags.append("few_matches")          # 비교가가 1~2건에 기댐 → 리스크 감점
+        if not domestic:
+            flags.append("no_domestic_price")    # 네이버에서 같은/비슷한 상품을 못 찾음 → 마진 계산 불가
+    if weight_g > 0 and weight_source == "category_default":
+        flags.append("weight_estimated")
     naver_fee = (domestic or 0) * s.naver_fee_rate
     payment_fee = (domestic or 0) * s.payment_fee_rate
     if rates.source in ("last_known", "fallback_constant"):
@@ -165,6 +173,8 @@ def compute_economics(item: dict, signals: dict | None, rates: Rates, *, weight_
             risk -= 5
         if "requirement_needed" in flags or "requirement_unknown" in flags:
             risk -= 10
+        if "few_matches" in flags:
+            risk -= 5
         parts["risk"] = risk
         score = round(parts["margin"] + comp + demand + risk, 1)
 
@@ -237,10 +247,13 @@ def run(c, user_id: str, *, only_item: int | None = None, run_date: date | None 
             out["excluded"] += 1
             continue
         cat = d.categories.get(norm.get("canonical_category_id") or "")
-        weight = float((details.get(sid) or {}).get("package_weight_g") or (cat.default_weight_g if cat else 0) or 0)
+        detail_w = (details.get(sid) or {}).get("package_weight_g")
+        weight = float(detail_w or (cat.default_weight_g if cat else 0) or 0)
+        weight_source = "detail" if detail_w else ("category_default" if weight > 0 else "unknown")
         status, _ = d.requirement(norm.get("item_type") or "general")
         sp = prof_by_id.get((us.get(item["source_id"]) or {}).get("shipping_profile_id"))
-        econ = compute_economics(item, sig, rates, weight_g=weight, requirement_status=status, brand_hit=bool(norm.get("brand_text_hit")), shipping_profile=sp)
+        econ = compute_economics(item, sig, rates, weight_g=weight, requirement_status=status, brand_hit=bool(norm.get("brand_text_hit")),
+                                 shipping_profile=sp, weight_source=weight_source)
         st = "candidate" if (econ.margin_rate is not None and econ.margin_rate >= settings.margin_threshold) else "below_margin"
         out[st] += 1
         out["scored"] += 1

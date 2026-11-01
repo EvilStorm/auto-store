@@ -141,9 +141,16 @@ def _to_db(client, r: Rates) -> None:
 
 def get_rates(force_refresh: bool = False, client=None) -> Rates:
     """client(로그인) 가 있으면 공용 테이블을 먼저 보고, 신선한 행이 없을 때만 외부에서 받아 공용에 쓴다 (DESIGN ⓪)."""
-    cached = (_from_db(client) if client is not None else None) or _load()
-    if cached and not force_refresh and not cached.is_stale():
-        return cached
+    db = _from_db(client) if client is not None else None
+    if db and not force_refresh and not db.is_stale():
+        return db
+    local = _load()
+    if local and not force_refresh and not local.is_stale():
+        # 로컬 캐시는 신선한데 공용 테이블엔 없으면(첫 실행 · 다른 PC) 로컬 값을 공용에 올려 모두가 쓰게 한다
+        if client is not None and db is None:
+            _to_db(client, local)
+        return local
+    cached = db or local
     for fn in (_from_eximbank, _from_naver_finance, _from_er_api):
         try:
             r = fn()
