@@ -339,6 +339,14 @@ insert into user_sources (user_id, source_id, browser_profile_name) values (auth
 ```
 텔레그램 폴러(`app.telegram_poll`)가 돌고 있으면 봇에게 URL 을 보내는 것만으로 1~2분 뒤 카드가 온다. 결과는 후보 목록에 `origin=instant` 로 들어가 [승인][거절][보류] 가 똑같이 된다.
 
+### 5-4-5. 2차: 승인 → 콘텐츠 → 패키지 (8단계)
+폴러가 돌고 있으면 텔레그램 1차 카드의 [승인] 만으로 ⑥⑦⑧ 이 돌아 2차 카드가 오고, 2차 카드의 [등록 패키지 생성] 으로 ⑨ 까지 간다. 손으로 돌리려면:
+```powershell
+.venv\Scripts\python -m app.pipeline.content --cand <후보ID>      # ⑥ 상세 → ⑦ 생성(LLM 1회 · 약 70원) → ⑧ 2차 카드
+.venv\Scripts\python -m app.pipeline.package --cand <후보ID>      # ⑨ Storage 업로드 + output\YYYY-MM-DD\naver_bulk_upload.xlsx
+```
+엑셀 컬럼은 작업용 구성이다. 네이버 스마트스토어 "상품 일괄등록" 양식 파일을 받아 `app/pipeline/package.py` 의 `EXCEL_COLUMNS` · `excel_row()` 를 그 양식에 맞게 바꾼다.
+
 ### 5-5. 끝나면
 - `.env.dev` 에서 `SUPABASE_DB_URL` 과 `SUPABASE_SERVICE_KEY` 를 지워도 된다. 일상 실행(워커 · CLI · 관리자 웹)은 anon 키 + 로그인 세션만 쓴다.
 - 시드를 고쳤으면 `scripts/seed.py` 를 다시 돌린다(upsert · dict_version +1). 마이그레이션을 추가하면 `008_*.sql` 로 번호를 이어 `migrate.py`.

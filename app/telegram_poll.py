@@ -18,6 +18,40 @@ from app.db import current_user_id, pc_name, user_client
 
 ACTIONS = {"approve": ("approved_1", "approve", "승인 → 상세 수집 대기"), "reject": ("rejected_1", "reject", "거절 (90일 제외)"), "hold": ("held", "hold", "보류 → 내일 다시")}
 URL_RE = re.compile(r"https?://\S+")
+PENDING_REVISE: dict[str, int] = {}   # chat_id → candidate_id (수정 메모를 기다리는 중)
+
+
+def decide2(c, user_id: str, cid: int, action: str, bot) -> str:
+    """2차 카드 [등록 패키지 생성][수정 요청][폐기]."""
+    now = datetime.now(timezone.utc).isoformat()
+    rows = c.table("candidates").select("*").eq("id", cid).limit(1).execute().data
+    if not rows:
+        return "후보가 없습니다"
+    cand = rows[0]
+    if action == "package":
+        from app.pipeline import package
+
+        c.table("candidates").update({"status": "approved_2", "decision": "approve2", "decided_at": now}).eq("id", cid).execute()
+        cand["status"] = "approved_2"
+        try:
+            r = package.build(c, user_id, cand)
+            bot.send_text(f"패키지 생성 완료 #{cid} · 이미지 {r['images']}장 업로드 · 엑셀 {r['xlsx']}\n판매가 {r['row']['판매가']:,}원 · 상품명 {r['row']['상품명']}")
+            return "패키지 생성"
+        except Exception as e:
+            bot.send_text(f"패키지 생성 실패 #{cid}: {type(e).__name__}: {str(e)[:200]}")
+            return "패키지 실패"
+    if action == "revise":
+        c.table("candidates").update({"status": "revise", "decision": "revise", "decided_at": now}).eq("id", cid).execute()
+        PENDING_REVISE[str(bot.chat_id)] = cid
+        bot.send_text(f"#{cid} 수정 메모를 답장으로 보내주세요 (예: 제목을 더 짧게, 옵션 색상명 통일). 받으면 다시 생성합니다.")
+        return "수정 메모 대기"
+    if action == "discard":
+        c.table("candidates").update({"status": "rejected_2", "decision": "discard", "decided_at": now}).eq("id", cid).execute()
+        it = c.table("source_items").select("source_id, source_item_id").eq("id", cand["source_item_id"]).limit(1).execute().data
+        if it:
+            c.table("rejections").insert({"user_id": user_id, "source_id": it[0]["source_id"], "source_item_id": it[0]["source_item_id"], "reason": "other"}).execute()
+        return "폐기"
+    return "알 수 없는 동작"
 
 
 def decide(c, user_id: str, cid: int, action: str) -> str:
@@ -42,17 +76,47 @@ def handle_callback(c, user_id: str, cb: dict, bot) -> str:
     if not parsed:
         return "알 수 없는 버튼"
     kind, cid, action = parsed
+    msg = cb.get("message") or {}
+    if kind == "p":
+        label = decide2(c, user_id, cid, action, bot)
+        if msg.get("message_id"):
+            bot.edit_buttons(msg["message_id"], [[(f"✓ {label}", f"p:{cid}:done")]])
+        return label
     if kind != "c" or action not in ACTIONS:
         return "알 수 없는 버튼"
     label = decide(c, user_id, cid, action)
-    msg = cb.get("message") or {}
     if msg.get("message_id"):
         bot.edit_buttons(msg["message_id"], [[(f"✓ {label}", f"c:{cid}:done")]])
+    if action == "approve":
+        # 승인 즉시 ⑥⑦⑧: 상세 수집 → 콘텐츠 생성(LLM) → 2차 카드 (보통 1~2분)
+        bot.send_text(f"#{cid} 승인 → 상세 수집 · 콘텐츠 생성 중 (1~2분)")
+        try:
+            from app.pipeline import content
+
+            r = content.run(c, user_id, only=cid, bot=bot)
+            if r["errors"]:
+                bot.send_text("콘텐츠 생성 실패: " + r["errors"][0][:300])
+        except Exception as e:
+            bot.send_text(f"콘텐츠 생성 오류: {type(e).__name__}: {str(e)[:200]}")
     return label
 
 
 def handle_message(c, user_id: str, m: dict, bot) -> None:
     text = m.get("text") or ""
+    chat = str((m.get("chat") or {}).get("id") or "")
+    if chat in PENDING_REVISE and text and not text.startswith("/") and not URL_RE.search(text):
+        cid = PENDING_REVISE.pop(chat)
+        c.table("generated_contents").update({"revise_note": text[:500]}).eq("candidate_id", cid).execute()
+        bot.send_text(f"#{cid} 수정 메모 접수 → 다시 생성 중")
+        try:
+            from app.pipeline import content
+
+            r = content.run(c, user_id, only=cid, bot=bot)
+            if r["errors"]:
+                bot.send_text("재생성 실패: " + r["errors"][0][:300])
+        except Exception as e:
+            bot.send_text(f"재생성 오류: {type(e).__name__}: {str(e)[:200]}")
+        return
     urls = URL_RE.findall(text)
     if urls:
         from app.instant import process_queue

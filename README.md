@@ -186,6 +186,14 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 `app/instant.py` 재작성 — 이력은 Supabase `analysis_requests`, 결과는 일반 후보와 같은 `candidates`(origin=instant). **등록 소스**(1688)는 어댑터 `detail()` → 공용 `source_items`·`source_item_details`(옵션·무게·이미지) → ② 사전 정규화(빵부스러기가 없으면 제목 별칭으로 카테고리) → ③ 국내 조회 → ④ 점수 → 카드, **AI 0회**. **미등록 사이트**는 범용 스냅샷 → `page_extracts`(URL+텍스트 해시) 캐시 또는 LLM 추출 → LLM 정규화 → 소스 자동 등록(host) → 같은 후단. 입구 3개: CLI(`python -m app.instant <URL>`), 텔레그램(URL 보내면 폴러가 바로 분석해 카드로 응답), 관리자 웹(큐 + "지금 처리"). `--queue --telegram` 으로 큐 처리.
 1688 상세 어댑터는 페이지 **내장 JSON**(`currentPrices`·`skuInfoMap`·`pieceWeightScaleInfo`·`mainImageList`·`offerTitle`)을 우선 읽고 텍스트·DOM 은 폴백(쿠폰가 `券后¥0.90起` 는 건너뜀). 실측: 즉시 분석 1건 ≈ 1분, LLM 0회, 무게·옵션 10개·이미지 5장 확보. 테스트 46개.
 
+## 8-0-6. 구현 8단계 (2026-11-01): 2차 — 상세 수집 · 콘텐츠 생성 · 2차 카드 · 패키지
+
+- 마이그레이션 009: `generated_contents` · `packages`(개인), Storage 공개 버킷 `product-images` + 정책(읽기 공개, 쓰기는 `<user_id>/…` 본인 폴더)
+- `app/pipeline/content.py` ⑥⑦⑧: 승인(approved_1) → 어댑터 상세(오늘 이미 있으면 재사용) → **LLM 1회**(상품명 후보 3 · 불릿 · 설명 문단 · 옵션 한국어화, 사실만 · 브랜드 제외 · 최상급 금지) → 로컬 금지 문구 검사 → 고정 블록(고지 · 배송 · 반품 · 통관, 배송 프로필의 국가 · 배송일) → HTML → 공용 `source_item_ko_drafts` 초안 캐시 → 2차 카드 [등록 패키지 생성][수정 요청][폐기]. 월 예산 초과 시 중단. 이미지 모드 A = 원본 그대로
+- `app/pipeline/package.py` ⑨: 이미지 → Storage 공개 URL → 엑셀 행(`output/YYYY-MM-DD/naver_bulk_upload.xlsx`, 작업용 16컬럼 — 네이버 양식 매핑은 양식 확보 후) → `packages` → packaged
+- 텔레그램 폴러: 1차 [승인] 즉시 ⑥⑦⑧ 실행 → 2차 카드, 2차 버튼(패키지 생성 / 수정 메모 받아 재생성 / 폐기). 관리자 웹 후보 상세에 2차 섹션(생성 · 패키지 · 폐기, 콘텐츠 · 패키지 표시). `app.worker run --stage content|package`
+- 실측(#17): 상세 재사용 0s · 생성 31s 70.9원 · 금지어 0 · 패키지 4s 이미지 5장 업로드 · 엑셀 1행. 테스트 50개
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

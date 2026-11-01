@@ -17,7 +17,7 @@ from app.config import settings
 from app.db import current_user_id, pc_name, user_client
 from app.user_settings import ensure_user_settings
 
-STAGES = ("collect", "lookup", "score", "notify")
+STAGES = ("collect", "lookup", "score", "notify", "content", "package")
 
 
 def run_stages(c, uid: str, stages: tuple[str, ...], *, headed: bool = False, dry_run: bool = False) -> dict:
@@ -55,6 +55,23 @@ def run_stages(c, uid: str, stages: tuple[str, ...], *, headed: bool = False, dr
 
         r = notify.run(c, uid)
         out["notify"] = {k: v for k, v in r.items() if k != "texts"}
+    if "content" in stages and not dry_run:
+        from app.pipeline import content
+
+        bot = None
+        try:
+            from app.adapters.telegram import bot_from
+
+            bot = bot_from(c)
+        except Exception:
+            pass
+        out["content"] = content.run(c, uid, bot=bot, headed=headed)
+        repo.log_run(c, uid, "content", today, out["content"], pc_name=pc_name())
+    if "package" in stages and not dry_run:
+        from app.pipeline import package
+
+        out["package"] = package.run(c, uid)
+        repo.log_run(c, uid, "package", today, out["package"], pc_name=pc_name())
     return out
 
 
@@ -62,7 +79,7 @@ def cmd_run(a) -> int:
     c = user_client()
     uid = current_user_id(c)
     ensure_user_settings(c, uid)
-    stages = (a.stage,) if a.stage else STAGES
+    stages = (a.stage,) if a.stage else ("collect", "lookup", "score", "notify")   # 전체 실행은 발굴 ①~⑤. 2차는 승인 콜백 또는 --stage content|package
     if not a.no_lock and not a.dry_run and not repo.acquire_lock(c, date.today(), "batch", pc_name()):
         print("다른 PC 가 오늘 배치 잠금을 가지고 있습니다 (--no-lock 으로 강제)")
         return 3

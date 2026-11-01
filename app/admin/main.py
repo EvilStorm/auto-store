@@ -199,7 +199,54 @@ def candidate_detail(cid: int, request: Request):
     merged = sorted([{**nv.get(m["nv_mid"], {}), **m} for m in matches if m["nv_mid"] in nv], key=lambda m: (m["relation"] != "exact", m["method"] != "llm", -(m.get("similarity") or 0)))
     logo = (c.table("images").select("logo_checked_at, logo_detected, logo_reason").eq("kind", "source").eq("ref_id", str(item["id"])).limit(1).execute().data or [None])[0]
     card = render_card(item, norm, sig, cand, matches=merged, logo=logo, source_name=item["source_id"])
-    return page(request, "candidate.html", profile=prof, cand=cand, item=item, norm=norm, sig=sig, matches=merged, card=card, logo=logo, flag_ko=FLAG_KO)
+    detail = (c.table("source_item_details").select("options_json, images, package_weight_g, fetched_at").eq("source_item_id", item["id"]).limit(1).execute().data or [None])[0]
+    content = (c.table("generated_contents").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
+    pkg = (c.table("packages").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
+    return page(request, "candidate.html", profile=prof, cand=cand, item=item, norm=norm, sig=sig, matches=merged, card=card, logo=logo, flag_ko=FLAG_KO,
+                detail=detail, content=content, pkg=pkg)
+
+
+@app.post("/candidates/{cid}/stage2/{action}")
+def candidate_stage2(cid: int, action: str, request: Request):
+    """2차 흐름을 웹에서: generate(⑥⑦) · package(⑨) · discard. 서브프로세스가 아니라 요청 안에서 돈다 (1~2분)."""
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    rows = c.table("candidates").select("*").eq("id", cid).limit(1).execute().data
+    if not rows:
+        return RedirectResponse("/candidates?m=없는 후보", status_code=303)
+    cand = rows[0]
+    try:
+        if action == "generate":
+            from app.pipeline import content
+
+            if cand["status"] in ("candidate", "held", "below_margin"):
+                c.table("candidates").update({"status": "approved_1", "decision": "approve", "decided_at": datetime.now(timezone.utc).isoformat()}).eq("id", cid).execute()
+                cand["status"] = "approved_1"
+            r = content.run(c, uid, only=cid)
+            msg = "콘텐츠 생성 완료" if not r["errors"] else "실패: " + r["errors"][0][:200]
+        elif action == "package":
+            from app.pipeline import package
+
+            c.table("candidates").update({"status": "approved_2", "decision": "approve2", "decided_at": datetime.now(timezone.utc).isoformat()}).eq("id", cid).execute()
+            cand["status"] = "approved_2"
+            r = package.build(c, uid, cand)
+            msg = f"패키지 생성: 이미지 {r['images']}장 · {r['xlsx']}"
+        elif action == "discard":
+            from app.telegram_poll import decide2
+
+            class _NoBot:
+                chat_id = "web"
+
+                def send_text(self, *a, **k):
+                    pass
+
+            msg = decide2(c, uid, cid, "discard", _NoBot())
+        else:
+            msg = "?"
+    except Exception as e:
+        msg = f"실패: {type(e).__name__}: {str(e)[:200]}"
+    return RedirectResponse(f"/candidates/{cid}?m={msg}", status_code=303)
 
 
 @app.post("/candidates/{cid}/{action}")

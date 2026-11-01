@@ -33,6 +33,23 @@
   </table>
 </article>
 <article>
+  <header><strong>2차 · 등록 콘텐츠</strong> <small>⑥ 상세 수집 → ⑦ 생성(LLM) → ⑧ 검토 → ⑨ 패키지</small></header>
+  <div class="row-actions" style="margin-bottom:.6rem">
+    <form method="post" action="/candidates/{{ cand.id }}/stage2/generate" class="inline"><button>{{ '다시 생성' if content else '상세 수집 + 콘텐츠 생성' }} (1~2분 · LLM 1회)</button></form>
+    {% if content %}<form method="post" action="/candidates/{{ cand.id }}/stage2/package" class="inline"><button class="contrast">등록 패키지 생성</button></form>{% endif %}
+    <form method="post" action="/candidates/{{ cand.id }}/stage2/discard" class="inline"><button class="secondary">폐기</button></form>
+  </div>
+  {% if detail %}<p><small>상세: 옵션 {{ (detail.options_json or [])|length }}개 · 이미지 {{ (detail.images or [])|length }}장 · 무게 {{ detail.package_weight_g or '-' }}g · {{ detail.fetched_at|ts }}</small></p>{% endif %}
+  {% if content %}
+    <p><strong>상품명 후보</strong> {% for t in content.title_options %}<span class="tag {{ 'ok' if t == content.title_chosen else '' }}">{{ t }}</span>{% endfor %}</p>
+    <p><strong>옵션</strong> {% for o in content.options_ko_json %}<span class="tag {{ '' if o.sell else 'bad' }}" title="{{ o.name_raw }}">{{ o.name_ko }}</span>{% endfor %}</p>
+    {% if content.forbidden_hits %}<p class="flash">금지 문구 감지: {{ content.forbidden_hits|join(', ') }}</p>{% endif %}
+    {% if content.revise_note %}<p><small>수정 메모: {{ content.revise_note }}</small></p>{% endif %}
+    <details><summary>상세 설명 HTML (LLM {{ content.llm_cost_krw }}원 · 이미지 {{ content.image_urls|length }}장 · 모드 {{ content.mode }})</summary><div style="border:1px solid #ddd;padding:.8rem;background:#fff">{{ content.description_html|safe }}</div></details>
+  {% endif %}
+  {% if pkg %}<p><strong>패키지</strong> 판매가 {{ pkg.sale_price_krw|won }} · 공개 이미지 {{ pkg.image_public_urls|length }}장 · <code>{{ pkg.output_path }}</code> · {{ pkg.created_at|ts }}</p>{% endif %}
+</article>
+<article>
   <header><strong>원가 내역</strong></header>
   <table>{% for k, v in cand.cost_breakdown_json.items() %}<tr><td>{{ k }}</td><td style="text-align:right">{{ v }}</td></tr>{% endfor %}</table>
 </article>
