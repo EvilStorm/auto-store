@@ -10,7 +10,7 @@
   <thead><tr><th></th><th>상품</th><th>상태</th><th>마진</th><th>점수</th><th>국내가</th><th>제안가</th><th>플래그</th><th>날짜</th><th></th></tr></thead>
   <tbody>{% for r in rows %}{% set it = items.get(r.source_item_id, {}) %}{% set nm = norms.get(r.source_item_id, {}) %}
   <tr>
-    <td>{% if it.main_image_url %}<img class="thumb" src="{{ it.main_image_url }}" loading="lazy">{% endif %}</td>
+    <td>{% if it.main_image_url %}<img class="thumb" src="{{ it.main_image_url|img }}" loading="lazy">{% endif %}</td>
     <td><a href="/candidates/{{ r.id }}">{{ nm.title_clean or it.title_raw or r.source_item_id }}</a><br><small>#{{ r.source_item_id }} · {{ it.source_id }} · {{ (nm.search_queries or [])|join(' / ') }}</small></td>
     <td><span class="tag {{ 'ok' if r.status in ('approved_1','approved_2','listed') else 'bad' if r.status.startswith('rejected') else '' }}">{{ r.status }}</span></td>
     <td>{{ r.margin_rate|pct }}</td><td>{{ r.score if r.score is not none else '-' }}</td>

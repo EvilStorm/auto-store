@@ -67,6 +67,7 @@ def _won(v):
 
 
 templates.env.filters["won"] = _won
+templates.env.filters["img"] = lambda u: ("/img?u=" + __import__("urllib.parse").parse.quote(u, safe="")) if u else ""
 templates.env.filters["pct"] = lambda v: "-" if v is None else f"{float(v) * 100:.0f}%"
 templates.env.filters["ts"] = lambda v: (v or "")[:16].replace("T", " ")
 
@@ -677,6 +678,40 @@ def order_costs(oid: int, request: Request, source_paid_src: float = Form(0), cu
                                    "forwarder_fee_krw": forwarder_fee_krw, "customs_krw": customs_krw, "other_krw": other_krw, "total_actual_krw": total,
                                    "estimated_krw": int(estimated_krw) if estimated_krw else None}, on_conflict="order_id").execute()
     return RedirectResponse(f"/orders/{oid}?m=실제 원가 {total:,}원 저장", status_code=303)
+
+
+# ───────────────────────── 이미지 프록시 ─────────────────────────
+# 1688 CDN(alicdn) 등은 외부 Referer 의 핫링크를 막아 브라우저가 직접 긁으면 깨진다. 서버가 받아(디스크 캐시) 내려준다.
+IMG_CACHE = settings.data_dir / "cache" / "img"
+IMG_HOSTS = ("alicdn.com", "aliexpress-media.com", "pstatic.net", "naver.net", "supabase.co", "1688.com", "aliexpress.com")
+
+
+@app.get("/img")
+def img_proxy(u: str = ""):
+    import hashlib
+
+    from fastapi.responses import Response
+
+    from app.vision.phash import fetch
+
+    if not u.startswith("http") or not any(h in u for h in IMG_HOSTS):
+        return Response(status_code=404)
+    IMG_CACHE.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha1(u.encode()).hexdigest()
+    hit = next(IMG_CACHE.glob(key + ".*"), None)
+    if hit:
+        ctype = "image/png" if hit.suffix == ".png" else "image/webp" if hit.suffix == ".webp" else "image/jpeg"
+        return Response(hit.read_bytes(), media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+    ib = fetch(u, timeout=15.0, referer="https://search.naver.com/" if "pstatic" in u else None)
+    if not ib:
+        return Response(status_code=502)
+    ctype = (ib.content_type or "image/jpeg").split(";")[0]
+    ext = {"image/png": ".png", "image/webp": ".webp"}.get(ctype, ".jpg")
+    try:
+        (IMG_CACHE / (key + ext)).write_bytes(ib.data)
+    except Exception:
+        pass
+    return Response(ib.data, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
