@@ -19,8 +19,8 @@ create table if not exists public.user_settings (
   -- 매칭
   price_basis             text not null default 'mean' check (price_basis in ('mean', 'median', 'min')),
   match_preset            text not null default 'normal' check (match_preset in ('strict', 'normal', 'wide')),
-  exact_threshold         numeric(4,3) not null default 0.900,
-  similar_threshold       numeric(4,3) not null default 0.800,
+  exact_threshold         numeric(4,3) not null default 0.950,   -- CLIP 코사인. 실측상 0.9 로는 다른 브랜드가 '정확'으로 잡힘 (DESIGN 11장)
+  similar_threshold       numeric(4,3) not null default 0.700,
   same_image_seller_cap   integer not null default 5,
   llm_rejudge_top_n       integer not null default 0,
   naver_top_n             integer not null default 10,

@@ -3,6 +3,10 @@ anthropic>=2.3
 supabase>=2.33
 psycopg[binary]>=3.1
 pytest>=8.0
+# 이미지 (4단계). torch 는 CPU 휠로: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pillow>=10.0
+imagehash>=4.3
+open_clip_torch>=2.24
 playwright>=1.64
 httpx>=0.27
 pydantic>=2.7

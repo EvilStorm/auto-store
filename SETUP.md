@@ -284,7 +284,13 @@ v3 구현 1단계(DESIGN.md 10장). 스키마·RLS·시드·첫 계정을 만든
 
 # 관심 카테고리를 넣은 뒤 수집 + 정규화 (DB 쓰기 없이 카운트만 보려면 --dry-run)
 .venv\Scripts\python -m app.pipeline.collector --dry-run --headed
+
+# 4단계 이미지 라이브러리 (CPU torch · 한 번만 · 수 분) → 국내 조회 · 매칭
+.venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+.venv\Scripts\python -m pip install open_clip_torch imagehash pillow
+.venv\Scripts\python -m app.pipeline.domestic --pending --limit 20      # 첫 실행 때 CLIP 모델(~350MB) 자동 다운로드
 ```
+torch 없이도 `domestic` 은 돈다(pHash 동일 사진 + 용량 숫자 규칙만, 정밀도 낮음). 회사망 프록시면 `$env:HF_ENDPOINT` / `$env:HTTPS_PROXY` 를 지정한다.
 관심 카테고리는 관리자 웹(6단계) 전까지는 SQL Editor 로 넣는다:
 ```sql
 insert into source_categories (source_id, label_raw, url, canonical_category_id)

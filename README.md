@@ -162,6 +162,12 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 - `app/sources/base.py` 어댑터 계약 · `s1688.py` 1688 목록·상세(로그인 프로필, 카드 휴리스틱, 가격 구간·起批·成交 파싱, `python -m app.sources.s1688 --profile 1688 --pages 2 <URL> -o samples.json`) · `app/repo.py` 데이터 접근 · `app/pipeline/collector.py` ①+② 배치(`python -m app.pipeline.collector [--dry-run]`, 배치 잠금)
 - `tests/` 26개 (`.venv\Scripts\python -m pytest -q`). **1688 실제 수집·DB 적재는 로그인 프로필과 Supabase 적용 뒤 검증.**
 
+## 8-0-2. 구현 4단계 (2026-11-01): 국내 조회 · CLIP/pHash 매칭 · 시장 신호
+
+- `app/vision/phash.py` 썸네일 내려받기 · pHash(64비트 ↔ bigint) · 해밍 거리(≤6 동일 사진) · `clip.py` open_clip ViT-B-32 CPU 임베딩(첫 호출에 모델 로드, torch 없으면 `available()=False` 로 폴백)
+- `app/pipeline/domestic.py` ③ 국내 조회기: 검색어별 공용 캐시(`naver_queries`, TTL 7일) → 미스만 크롤링 → `naver_items` upsert → 소스·썸네일 `images`(nv_mid 당 1회) → `judge()`(CLIP 코사인 ≥0.95 정확 / ≥0.70 유사, 용량 불일치면 강등, 동일 사진이면 정확, CLIP 없으면 pHash·숫자 규칙). **실측(텀블러 5장): 같은 상품 다른 컷 0.61, 다른 브랜드 카탈로그 컷 0.85 → CLIP 은 유사·참고치 담당, "정확"은 pHash·N건 LLM 재판정** (DESIGN 11장) → `matches` · `market_signals`(정확/유사 수 · 동일 사진 판매자 · 리뷰 · 찜 · 판매처 · 가격 평균/중앙값/최저 · 최빈 cat_id). `python -m app.pipeline.domestic --item <id> | --pending`
+- 설정: `EXACT_THRESHOLD` · `SIMILAR_THRESHOLD` · `NAVER_CACHE_TTL_DAYS`, user_settings 병합. 테스트 31개.
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

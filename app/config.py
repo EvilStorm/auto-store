@@ -97,6 +97,11 @@ class Settings:
     naver_top_n: int = field(default_factory=lambda: _i("NAVER_TOP_N", 10))
     price_basis: str = field(default_factory=lambda: _s("PRICE_BASIS", "mean"))  # mean | median | min
     same_image_seller_cap: int = field(default_factory=lambda: _i("SAME_IMAGE_SELLER_CAP", 5))
+    # CLIP 코사인. 2026-11-01 실측(ViT-B-32, 텀블러 5장): 같은 상품 다른 컷 0.61 · 다른 브랜드 카탈로그 컷 0.85 →
+    # CLIP 만으로 "정확" 판정은 불가. 0.95 는 거의 동일 사진에만 걸리고, "정확"은 pHash 동일 사진 · LLM 재판정이 맡는다 (DESIGN 11장)
+    exact_threshold: float = field(default_factory=lambda: _f("EXACT_THRESHOLD", 0.95))
+    similar_threshold: float = field(default_factory=lambda: _f("SIMILAR_THRESHOLD", 0.70))
+    naver_cache_ttl_days: int = field(default_factory=lambda: _i("NAVER_CACHE_TTL_DAYS", 7))
 
     # 즉시 분석
     instant_daily_limit: int = field(default_factory=lambda: _i("INSTANT_ANALYSIS_DAILY_LIMIT", 50))
