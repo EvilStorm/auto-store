@@ -37,6 +37,49 @@ COST_KO = [("currency", "통화"), ("rate_krw", "환율(원)"), ("unit_price_src
 FLAG_SHORT = {"weight_unknown": "무게 미확인", "near_customs_limit": "과세 경계", "over_customs_limit": "관부가세", "rate_stale": "환율 오래됨", "requirement_needed": "요건 필요",
               "requirement_unknown": "요건 미확정", "brand_detected": "브랜드 감지", "price_is_reference": "참고가", "few_matches": "비교 1~2건", "no_domestic_price": "비교가 없음", "weight_estimated": "무게 추정"}
 RELATION_KO = {"exact": "정확 (같은 상품)", "similar": "유사 (같은 종류 · 참고가)", "unrelated": "무관 (임계값 미만)"}
+def cost_sections_for(b: dict, item: dict, domestic: int | None) -> list[dict]:
+    """총원가를 '어디서 얼마가 붙었나' 로 읽히게 섹션별 행으로. 비율은 설정값이 아니라 저장된 금액에서 역산 (그때 적용된 값 그대로)."""
+    if not b:
+        return []
+    cur, rate, unit, moq = b.get("currency", "CNY"), b.get("rate_krw") or 0, b.get("unit_price_src") or 0, b.get("moq") or 1
+    purchase, local_ship = b.get("purchase_krw") or 0, b.get("local_shipping_krw") or 0
+    base = purchase + local_ship
+    r = lambda x, d: (x / d * 100) if d else 0
+    tiers = " / ".join(f"{t.get('min_qty', 1)}개~ {cur} {t.get('unit_price')}" for t in (item.get("price_tiers_json") or [])[:4])
+    sections = [
+        {"title": f"1688 구매 ({cur} → 원)", "sub": f"수량 구간: {tiers}" if tiers else "", "rows": [
+            ("판매 단가", f"{cur} {unit:g}", f"MOQ {moq}개 구간 적용"),
+            ("최소 주문 수량 (MOQ)", f"{moq}개", "이 수량을 한 번에 사는 것으로 원가 계산"),
+            ("환율", f"1 {cur} = {rate:,.2f}원", ""),
+            ("구매 원가", purchase, f"{unit:g} × {moq} × {rate:,.2f}"),
+        ]},
+        {"title": "중국 내 비용", "sub": "", "rows": [
+            ("현지 배송비", local_ship, "판매자 → 배대지 (소스에 없으면 배송 프로필 기본값)"),
+            ("대리구매 수수료", b.get("proxy_fee_krw") or 0, f"(구매 원가 + 현지 배송비) × {r(b.get('proxy_fee_krw') or 0, base):.1f}%"),
+        ]},
+        {"title": "국제 배송 · 통관", "sub": "", "rows": [
+            ("배대지 요금", b.get("forwarder_krw") or 0, f"무게 {b.get('weight_g') or 0:g}g · 배송 프로필 요금표" + (" · 무게 미확인" if not b.get("weight_g") else "")),
+            ("관부가세", b.get("customs_krw") or 0, f"과세가격 USD {b.get('taxable_usd') or 0} " + ("→ 150달러 초과, 관세+부가세 반영" if b.get("customs_krw") else "→ 150달러 이하 면세")),
+        ]},
+        {"title": "판매 수수료 (국내 비교가 기준)", "sub": "비교가가 없으면 0 — 실제로는 판매가에 비례", "rows": [
+            ("네이버 수수료", b.get("naver_fee_krw") or 0, f"비교가 {domestic:,}원 × {r(b.get('naver_fee_krw') or 0, domestic):.1f}%" if domestic else "비교가 없음"),
+            ("결제 수수료", b.get("payment_fee_krw") or 0, f"비교가 {domestic:,}원 × {r(b.get('payment_fee_krw') or 0, domestic):.1f}%" if domestic else "비교가 없음"),
+        ]},
+        {"title": "완충", "sub": "", "rows": [
+            ("환차손 완충", b.get("fx_buffer_krw") or 0, f"구매 원가 × {r(b.get('fx_buffer_krw') or 0, purchase):.1f}%"),
+        ]},
+    ]
+    total = b.get("total_cost_krw") or 0
+    sections[0]["subtotal"] = purchase                      # 1688 구매 섹션은 단가·수량·환율이 문자열이라 구매 원가만 소계
+    for sec in sections[1:]:
+        sec["subtotal"] = sum(v for _, v, _ in sec["rows"] if isinstance(v, (int, float)))
+    summary = [("총원가", total, "위 섹션 소계의 합")]
+    if domestic:
+        summary += [("국내 비교가", domestic, "정확/유사 매칭 가격의 평균·중앙·최저 중 설정값"),
+                    ("예상 이익", domestic - total, f"비교가 − 총원가 → 마진율 {(domestic - total) / domestic * 100:.1f}%")]
+    return sections + [{"title": "정리", "sub": "", "rows": summary, "subtotal": None}]
+
+
 ORDER_STATUSES = ["new", "pccc_check", "source_ordered", "at_forwarder", "shipped", "customs", "delivered", "canceled"]
 ORDER_KO = {"new": "신규", "pccc_check": "통관부호 확인", "source_ordered": "소스 주문 완료", "at_forwarder": "배대지 입고", "shipped": "발송", "customs": "통관", "delivered": "배송 완료", "canceled": "취소"}
 JOBS: dict[str, dict] = {}          # stage → {proc, log, started}
@@ -227,9 +270,9 @@ def candidate_detail(cid: int, request: Request):
     pkg = (c.table("packages").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     listing = (c.table("listings").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     events = c.table("monitor_events").select("*").eq("candidate_id", cid).order("created_at", desc=True).limit(20).execute().data if listing else []
-    cost_rows = [(label, cand.get("cost_breakdown_json", {}).get(k)) for k, label in COST_KO if cand.get("cost_breakdown_json", {}).get(k) is not None]
+    cost_sections = cost_sections_for(cand.get("cost_breakdown_json") or {}, item, cand.get("domestic_price_krw"))
     return page(request, "candidate.html", profile=prof, cand=cand, item=item, norm=norm, sig=sig, matches=merged, card=card, logo=logo, flag_ko=FLAG_KO,
-                detail=detail, content=content, pkg=pkg, listing=listing, events=events, status_ko=STATUS_KO, relation_ko=RELATION_KO, cost_rows=cost_rows,
+                detail=detail, content=content, pkg=pkg, listing=listing, events=events, status_ko=STATUS_KO, relation_ko=RELATION_KO, cost_sections=cost_sections,
                 n_unrelated=sum(1 for m in merged if m["relation"] == "unrelated"))
 
 

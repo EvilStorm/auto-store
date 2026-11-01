@@ -14,7 +14,13 @@
   .actions button { margin: 0; }
   .rel-exact { background: #D9F2E3; } .rel-similar { background: #DDEBFF; } .rel-unrelated { background: #EEF0F4; color: #777; }
   .muted { color: #888; }
-  table.cost td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  table.cost { min-width: 0; margin: 0; } table.cost td { padding: .3rem .4rem; vertical-align: top; }
+  table.cost td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+  .cost-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .8rem; }
+  .cost-sec { border: 1px solid #e3e3e3; border-radius: 8px; padding: .6rem .8rem; background: #fff; }
+  .cost-sec.summary { background: #F3F7FF; border-color: #BBD0F5; }
+  .cost-h { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: .3rem; }
+  .cost-sub { font-variant-numeric: tabular-nums; }
   section > article { margin-bottom: 1rem; }
   .help { background: #F7F8FA; border-left: 3px solid #2B6CB0; padding: .5rem .8rem; font-size: .82rem; color: #444; margin: .4rem 0 .8rem; }
 </style>
@@ -38,7 +44,7 @@
       <article><div class="v">{{ cand.score if cand.score is not none else '-' }}</div><div class="l">후보 점수 {% if cand.score_parts_json %}<span class="muted">{{ cand.score_parts_json }}</span>{% endif %}</div></article>
       <article><div class="v">{{ cand.domestic_price_krw|won }}</div><div class="l">국내 비교가 ({{ '정확' if sig.basis_type == 'exact' else '유사 참고' if sig.basis_type == 'similar' else '없음' }})</div></article>
       <article><div class="v">{{ cand.suggested_price_krw|won }}</div><div class="l">제안 판매가 (목표 마진)</div></article>
-      <article><div class="v">{{ (cand.cost_breakdown_json or {}).get('total_cost_krw')|won }}</div><div class="l">총원가 (소스가 {{ (cand.cost_breakdown_json or {}).get('currency','') }} {{ (cand.cost_breakdown_json or {}).get('unit_price_src','') }} × {{ (cand.cost_breakdown_json or {}).get('moq','') }})</div></article>
+      <article><div class="v">{{ (cand.cost_breakdown_json or {}).get('total_cost_krw')|won }}</div><div class="l">총원가 · 1688 구매 {{ (cand.cost_breakdown_json or {}).get('purchase_krw')|won }} + 부대비용 <a href="#cost">내역 ↓</a></div></article>
       <article><div class="v">{{ sig.exact_count or 0 }} / {{ sig.similar_count or 0 }}</div><div class="l">정확 / 유사 매칭 (수집 {{ sig.total_results or 0 }})</div></article>
       <article><div class="v">{{ sig.review_top or '-' }}</div><div class="l">리뷰 최대 · 찜 {{ sig.wish_top or '-' }}</div></article>
       <article><div class="v">{{ sig.same_image_sellers if sig.same_image_sellers is not none else '-' }}</div><div class="l">동일 사진 판매자 · 판매처 최대 {{ sig.seller_count_max or '-' }}</div></article>
@@ -117,15 +123,25 @@
   {% endif %}
 </article>
 
-<div class="grid2">
-  <article>
-    <header><strong>원가 내역</strong> <span class="muted">내 배송 프로필 · 수수료 설정 기준</span></header>
-    <table class="cost">{% for label, v in cost_rows %}<tr><td>{{ label }}</td><td>{{ v }}</td></tr>{% endfor %}</table>
-  </article>
-  <article>
-    <header><strong>텔레그램 카드 원문</strong></header>
-    <details><summary>펼치기</summary><pre class="card">{{ card }}</pre></details>
-  </article>
-</div>
+<article id="cost">
+  <header><strong>원가 구성</strong> <span class="muted">1688 판매가에서 총원가까지 — 내 배송 프로필 · 수수료 설정으로 계산한 당시 값</span></header>
+  {% if cost_sections %}
+  <div class="cost-grid">
+  {% for sec in cost_sections %}
+    <div class="cost-sec {{ 'summary' if sec.subtotal is none and loop.last else '' }}">
+      <div class="cost-h"><span>{{ sec.title }}</span>{% if sec.subtotal is not none %}<span class="cost-sub">{{ sec.subtotal|won }}</span>{% endif %}</div>
+      {% if sec.sub %}<div class="muted" style="font-size:.75rem;margin:-.2rem 0 .3rem">{{ sec.sub }}</div>{% endif %}
+      <table class="cost">{% for label, v, note in sec.rows %}
+        <tr><td>{{ label }}<br><small class="muted">{{ note }}</small></td><td>{{ v|won if v is number else v }}</td></tr>
+      {% endfor %}</table>
+    </div>
+  {% endfor %}
+  </div>
+  {% else %}<p class="muted">원가 계산 전입니다 (④ 점수 단계에서 계산).</p>{% endif %}
+</article>
+<article>
+  <header><strong>텔레그램 카드 원문</strong></header>
+  <details><summary>펼치기</summary><pre class="card">{{ card }}</pre></details>
+</article>
 </section>
 {% endblock %}
