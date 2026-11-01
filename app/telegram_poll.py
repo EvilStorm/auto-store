@@ -77,6 +77,13 @@ def handle_callback(c, user_id: str, cb: dict, bot) -> str:
         return "알 수 없는 버튼"
     kind, cid, action = parsed
     msg = cb.get("message") or {}
+    if kind == "m":
+        from app.pipeline.monitor import decide_monitor
+
+        label = decide_monitor(c, user_id, cid, action)
+        if msg.get("message_id"):
+            bot.edit_buttons(msg["message_id"], [[(f"✓ {label[:30]}", f"m:{cid}:done")]])
+        return label
     if kind == "p":
         label = decide2(c, user_id, cid, action, bot)
         if msg.get("message_id"):

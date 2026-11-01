@@ -17,7 +17,7 @@ from app.config import settings
 from app.db import current_user_id, pc_name, user_client
 from app.user_settings import ensure_user_settings
 
-STAGES = ("collect", "lookup", "score", "notify", "content", "package")
+STAGES = ("collect", "lookup", "score", "notify", "content", "package", "monitor")
 
 
 def run_stages(c, uid: str, stages: tuple[str, ...], *, headed: bool = False, dry_run: bool = False) -> dict:
@@ -72,7 +72,30 @@ def run_stages(c, uid: str, stages: tuple[str, ...], *, headed: bool = False, dr
 
         out["package"] = package.run(c, uid)
         repo.log_run(c, uid, "package", today, out["package"], pc_name=pc_name())
+    if "monitor" in stages and not dry_run:
+        from app.pipeline import monitor
+
+        bot = None
+        try:
+            from app.adapters.telegram import bot_from
+
+            bot = bot_from(c)
+        except Exception:
+            pass
+        out["monitor"] = monitor.run(c, uid, bot=bot, headed=headed)
+        repo.log_run(c, uid, "monitor", today, out["monitor"], pc_name=pc_name())
     return out
+
+
+def monitor_due(c) -> bool:
+    """마지막 감시 로그가 monitor_interval_days 보다 오래됐으면 True (⑩ 은 수집 배치 직후 주기적으로)."""
+    from datetime import datetime, timedelta, timezone
+
+    rows = c.table("run_logs").select("started_at").eq("kind", "monitor").order("started_at", desc=True).limit(1).execute().data
+    if not rows:
+        return True
+    last = datetime.fromisoformat(rows[0]["started_at"].replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) - last >= timedelta(days=int(settings.monitor_interval_days))
 
 
 def cmd_run(a) -> int:
@@ -108,9 +131,11 @@ def cmd_schedule(a) -> int:
     sched = BlockingScheduler(timezone="Asia/Seoul")
 
     def job_collect():
-        if repo.acquire_lock(user_client(), date.today(), "batch", pc_name()):
+        cc = user_client()
+        if repo.acquire_lock(cc, date.today(), "batch", pc_name()):
             print(date.today(), "수집 배치 시작")
-            print(run_stages(user_client(), uid, ("collect", "lookup", "score")))
+            stages = ("collect", "lookup", "score") + (("monitor",) if monitor_due(cc) else ())
+            print(run_stages(user_client(), uid, stages))
 
     def job_notify():
         if repo.acquire_lock(user_client(), date.today(), "notify", pc_name()):

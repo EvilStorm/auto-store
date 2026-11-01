@@ -347,6 +347,14 @@ insert into user_sources (user_id, source_id, browser_profile_name) values (auth
 ```
 엑셀 컬럼은 작업용 구성이다. 네이버 스마트스토어 "상품 일괄등록" 양식 파일을 받아 `app/pipeline/package.py` 의 `EXCEL_COLUMNS` · `excel_row()` 를 그 양식에 맞게 바꾼다.
 
+### 5-4-6. 등록 완료 · 감시 · 주문 (8단계 후반)
+엑셀을 스마트스토어에 올린 뒤 관리자 웹 후보 상세의 **등록 완료 표시**(스토어 상품번호 · 판매가) 또는:
+```powershell
+.venv\Scripts\python -m app.pipeline.monitor --mark <후보ID> --store-no <스토어상품번호> --price <판매가>
+.venv\Scripts\python -m app.pipeline.monitor                 # 등록 상품 전부 재점검 → 변동 시 텔레그램 카드
+```
+변동 카드의 [판매가 수정]/[판매 중지] 는 `output\YYYY-MM-DD\naver_price_update.xlsx` / `naver_status_update.xlsx` 에 행을 남긴다(커머스 API 전까지는 손으로 반영). 주문은 관리자 웹 **주문 관리** 에서 손으로 넣고 체크리스트 · 실제 원가를 기록하면 월 손익이 집계된다.
+
 ### 5-5. 끝나면
 - `.env.dev` 에서 `SUPABASE_DB_URL` 과 `SUPABASE_SERVICE_KEY` 를 지워도 된다. 일상 실행(워커 · CLI · 관리자 웹)은 anon 키 + 로그인 세션만 쓴다.
 - 시드를 고쳤으면 `scripts/seed.py` 를 다시 돌린다(upsert · dict_version +1). 마이그레이션을 추가하면 `008_*.sql` 로 번호를 이어 `migrate.py`.

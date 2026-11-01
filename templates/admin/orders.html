@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}주문 관리{% endblock %}
+{% block body %}
+<h2>주문 관리 <small style="font-weight:400;color:#666">스토어 주문 ↔ 소스 상품 · 체크리스트 · 실제 원가 · 월 손익</small></h2>
+<div class="kpi">
+  <article><div class="v">{{ '{:,}'.format(pnl.revenue_krw or 0) }}원</div><div class="l">이번 달 매출 ({{ pnl.orders_count or 0 }}건)</div></article>
+  <article><div class="v">−{{ '{:,}'.format(pnl.actual_cost_krw or 0) }}원</div><div class="l">실제 원가</div></article>
+  <article><div class="v">−{{ '{:,}'.format(pnl.fee_krw or 0) }}원</div><div class="l">네이버 · 결제 수수료</div></article>
+  <article><div class="v">−{{ '{:,.0f}'.format(pnl.api_cost_krw or 0) }}원</div><div class="l">API 비용</div></article>
+  <article><div class="v" style="color:{{ '#2F855A' if pnl.profit >= 0 else '#C53030' }}">{{ '{:,}'.format(pnl.profit) }}원</div><div class="l">월 손익</div></article>
+</div>
+<form method="get" action="/orders" style="display:flex;gap:.6rem;align-items:end">
+  <label>상태 <select name="status"><option value="">전체</option>{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ ko[s] }}</option>{% endfor %}</select></label><button>조회</button>
+</form>
+<table>
+  <thead><tr><th>주문번호 · 일시</th><th>상품 · 옵션</th><th>수량</th><th>결제액</th><th>실제 원가</th><th>통관부호</th><th>상태</th><th>도착 예정</th></tr></thead>
+  <tbody>{% for o in rows %}{% set l = lst.get(o.candidate_id) %}
+  <tr><td><a href="/orders/{{ o.id }}">{{ o.store_order_no }}</a><br><small>{{ o.ordered_at|ts }}</small></td>
+    <td>{{ (items.get(l.source_item_id, {}).title_raw if l else '(상품 미연결)')[:36] }}<br><small>{{ o.option_name or '' }}{% if l %} · 스토어 #{{ l.store_product_no or '-' }}{% endif %}</small></td>
+    <td>{{ o.qty }}</td><td>{{ o.paid_krw|won }}</td><td>{{ (costs.get(o.id, {}).total_actual_krw)|won if costs.get(o.id) else '-' }}</td>
+    <td>{{ '확인' if o.buyer_pccc_ok else '미확인' }}</td><td><span class="tag {{ 'ok' if o.status == 'delivered' else 'bad' if o.status == 'canceled' else '' }}">{{ ko[o.status] }}</span></td><td>{{ o.eta_date or '-' }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% if not rows %}<p>주문이 없습니다.</p>{% endif %}
+<article>
+  <header><strong>주문 추가</strong> <small>(커머스 API 연동 전: 스마트스토어 주문을 손으로 입력)</small></header>
+  <form method="post" action="/orders/add">
+    <div class="grid">
+      <label>스토어 주문번호 <input name="store_order_no" required></label>
+      <label>등록 상품 <select name="candidate_id"><option value="">(미연결)</option>{% for l in listings %}<option value="{{ l.candidate_id }}">#{{ l.store_product_no or l.candidate_id }} · {{ litems.get(l.source_item_id, {}).title_raw[:30] }} · {{ l.sale_price_krw|won }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="grid">
+      <label>옵션 <input name="option_name"></label>
+      <label>수량 <input type="number" name="qty" value="1" min="1"></label>
+      <label>결제액(원) <input type="number" name="paid_krw" value="0"></label>
+      <label>메모 <input name="memo"></label>
+    </div>
+    <button>추가</button>
+  </form>
+</article>
+{% endblock %}

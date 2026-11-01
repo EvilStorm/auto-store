@@ -108,6 +108,8 @@ class Settings:
     daily_candidate_n: int = field(default_factory=lambda: _i("DAILY_CANDIDATE_LIMIT", 10))   # 카드로 보낼 N
     llm_rejudge_top_n: int = field(default_factory=lambda: _i("LLM_REJUDGE_TOP_N", 10))       # N건 LLM 매칭 재판정 (0 = 끔)
     daily_llm_cap: int = field(default_factory=lambda: _i("DAILY_LLM_CAP", 50))
+    monitor_interval_days: int = field(default_factory=lambda: _i("MONITOR_INTERVAL_DAYS", 3))
+    monitor_price_threshold: float = field(default_factory=lambda: _f("MONITOR_PRICE_THRESHOLD", 0.05))
     collect_at: str = field(default_factory=lambda: _s("BATCH_COLLECT_AT", "02:00"))
     notify_at: str = field(default_factory=lambda: _s("BATCH_NOTIFY_AT", "08:00"))
     telegram_bot_token: str = field(default_factory=lambda: _s("TELEGRAM_BOT_TOKEN"))

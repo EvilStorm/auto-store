@@ -47,7 +47,21 @@
     {% if content.revise_note %}<p><small>수정 메모: {{ content.revise_note }}</small></p>{% endif %}
     <details><summary>상세 설명 HTML (LLM {{ content.llm_cost_krw }}원 · 이미지 {{ content.image_urls|length }}장 · 모드 {{ content.mode }})</summary><div style="border:1px solid #ddd;padding:.8rem;background:#fff">{{ content.description_html|safe }}</div></details>
   {% endif %}
-  {% if pkg %}<p><strong>패키지</strong> 판매가 {{ pkg.sale_price_krw|won }} · 공개 이미지 {{ pkg.image_public_urls|length }}장 · <code>{{ pkg.output_path }}</code> · {{ pkg.created_at|ts }}</p>{% endif %}
+  {% if pkg %}<p><strong>패키지</strong> 판매가 {{ pkg.sale_price_krw|won }} · 공개 이미지 {{ pkg.image_public_urls|length }}장 · <code>{{ pkg.output_path }}</code> · {{ pkg.created_at|ts }}</p>
+    {% if cand.status == 'packaged' %}
+    <form method="post" action="/candidates/{{ cand.id }}/listed" class="grid" style="align-items:end">
+      <label>스토어 상품번호 <input name="store_product_no" placeholder="엑셀 업로드 후 스마트스토어 상품번호"></label>
+      <label>판매가 <input type="number" name="sale_price_krw" value="{{ pkg.sale_price_krw or cand.suggested_price_krw or 0 }}" required></label>
+      <button>등록 완료 표시 → 감시 대상</button>
+    </form>{% endif %}
+  {% endif %}
+  {% if listing %}<p><strong>등록 상품</strong> 스토어 #{{ listing.store_product_no or '-' }} · 판매가 {{ listing.sale_price_krw|won }} · 감시 {{ listing.monitor_status }} · 마지막 점검 {{ (listing.last_checked_at or '')|ts or '-' }} · 기준 단가 ¥{{ listing.baseline_json.get('unit_price') }}</p>
+    {% for ev in events %}<div class="flash"><strong>{{ ev.kind }}</strong> {{ ev.before_json }} → {{ ev.after_json }}
+      {% if ev.recalculated_margin is not none %} · 재계산 마진 {{ ev.recalculated_margin|pct }}{% endif %}{% if ev.suggested_price_krw %} · 제안 {{ ev.suggested_price_krw|won }}{% endif %}
+      {% if not ev.decision %}<span class="row-actions"> <form method="post" action="/monitor/{{ ev.id }}/reprice" class="inline"><button>판매가 수정</button></form>
+        <form method="post" action="/monitor/{{ ev.id }}/suspend" class="inline"><button class="secondary">판매 중지</button></form>
+        <form method="post" action="/monitor/{{ ev.id }}/ignore" class="inline"><button class="outline">무시</button></form></span>{% else %} · 결정 {{ ev.decision }}{% endif %}</div>{% endfor %}
+  {% endif %}
 </article>
 <article>
   <header><strong>원가 내역</strong></header>

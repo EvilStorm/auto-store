@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block title %}주문 {{ o.store_order_no }}{% endblock %}
+{% block body %}
+<h2>주문 {{ o.store_order_no }} <span class="tag">{{ ko[o.status] }}</span> <small style="font-weight:400"><a href="/orders">← 목록</a></small></h2>
+<div class="grid2">
+  <article>
+    <header><strong>주문 ↔ 소스</strong></header>
+    <p>{{ o.option_name or '(옵션 없음)' }} × {{ o.qty }} · 결제 {{ o.paid_krw|won }} · {{ o.ordered_at|ts }}</p>
+    {% if item %}
+      <p><strong>{{ item.title_raw[:50] }}</strong><br><a href="{{ item.url }}" target="_blank">{{ item.url }}</a><br>
+      <small>소스 ID {{ item.source_item_id }} · 현재 단가 ¥{{ (item.price_tiers_json or [{}])[0].get('unit_price') }} · 최소 {{ item.moq }} · 스토어 #{{ lst.store_product_no or '-' }} · 판매가 {{ lst.sale_price_krw|won }}</small></p>
+      {% if est %}<p><small>등록 당시 예상 원가 (수량 반영) {{ est|won }}</small></p>{% endif %}
+    {% else %}<p>등록 상품과 연결되지 않은 주문입니다.</p>{% endif %}
+    <p><strong>예상 도착일</strong> {{ eta or '(소스 주문일 입력 후 계산)' }} <small>= 소스 주문일 + {{ lead }}일(배송 프로필)</small></p>
+  </article>
+  <article>
+    <header><strong>체크리스트</strong></header>
+    <form method="post" action="/orders/{{ o.id }}/status">
+      <label>상태 <select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == o.status else '' }}>{{ loop.index }}. {{ ko[s] }}</option>{% endfor %}</select></label>
+      <label><input type="checkbox" name="buyer_pccc_ok" {{ 'checked' if o.buyer_pccc_ok else '' }}> 개인통관고유부호 확인 (소스 주문 전 필수)</label>
+      <div class="grid">
+        <label>소스 주문번호 <input name="source_order_no" value="{{ o.source_order_no or '' }}"></label>
+        <label>소스 주문일 <input type="date" name="source_ordered_at" value="{{ o.source_ordered_at or '' }}"></label>
+      </div>
+      <label>운송장 <input name="tracking_no" value="{{ o.tracking_no or '' }}"></label>
+      <label>메모 <input name="memo" value="{{ o.memo or '' }}"></label>
+      <button>저장</button>
+    </form>
+  </article>
+</div>
+<article>
+  <header><strong>실제 원가</strong> <small>예상과 차이가 크면 배송 프로필 기본값 조정</small></header>
+  <form method="post" action="/orders/{{ o.id }}/costs">
+    <div class="grid">
+      <label>소스 결제액 <input type="number" step="0.01" name="source_paid_src" value="{{ cost.source_paid_src if cost else 0 }}"></label>
+      <label>통화 <input name="currency" value="{{ cost.currency if cost else 'CNY' }}"></label>
+      <label>환율 <input type="number" step="0.0001" name="rate" value="{{ cost.rate if cost else (rates.get('CNY') or 0) }}"></label>
+    </div>
+    <div class="grid">
+      <label>대리구매 수수료(원) <input type="number" name="proxy_fee_krw" value="{{ cost.proxy_fee_krw if cost else 0 }}"></label>
+      <label>배대지 요금(원) <input type="number" name="forwarder_fee_krw" value="{{ cost.forwarder_fee_krw if cost else 0 }}"></label>
+      <label>관부가세(원) <input type="number" name="customs_krw" value="{{ cost.customs_krw if cost else 0 }}"></label>
+      <label>기타(원) <input type="number" name="other_krw" value="{{ cost.other_krw if cost else 0 }}"></label>
+    </div>
+    <input type="hidden" name="estimated_krw" value="{{ est or '' }}">
+    <button>저장</button>
+    {% if cost %}<small> 실제 합계 {{ cost.total_actual_krw|won }}{% if cost.estimated_krw %} · 예상 {{ cost.estimated_krw|won }} · 차이 {{ (cost.total_actual_krw - cost.estimated_krw)|won }}{% endif %}</small>{% endif %}
+  </form>
+</article>
+{% endblock %}

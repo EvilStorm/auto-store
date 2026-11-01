@@ -194,6 +194,14 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 - 텔레그램 폴러: 1차 [승인] 즉시 ⑥⑦⑧ 실행 → 2차 카드, 2차 버튼(패키지 생성 / 수정 메모 받아 재생성 / 폐기). 관리자 웹 후보 상세에 2차 섹션(생성 · 패키지 · 폐기, 콘텐츠 · 패키지 표시). `app.worker run --stage content|package`
 - 실측(#17): 상세 재사용 0s · 생성 31s 70.9원 · 금지어 0 · 패키지 4s 이미지 5장 업로드 · 엑셀 1행. 테스트 50개
 
+## 8-0-7. 구현 8단계 후반 (2026-11-01): 등록 상품 감시 ⑩ · 주문 관리 · 월 손익
+
+- 마이그레이션 010: `listings`(등록 시점 소스 스냅샷 baseline) · `monitor_events` · `orders` · `order_costs`(개인 RLS), `my_month_pnl()` RPC(매출 − 실제 원가 − 수수료 − API 비용)
+- `app/pipeline/monitor.py` ⑩: "등록 완료" 표시(`--mark` / 관리자 웹 폼, packaged → listed) → 설정 주기마다 어댑터 상세 재수집 → `diff()`(단가 ±임계값 · MOQ · 품절 · 옵션 품절 · 삭제 · 복구, 임계값 미만은 무음) → 같은 변동은 결정 전까지 재알림 없음 → 현재 판매가 기준 재계산 마진 · 목표 마진 판매가 제안 → 텔레그램 변동 카드 [판매가 수정][판매 중지][무시] → 결정: `naver_price_update.xlsx` / `naver_status_update.xlsx` 행. 3회 연속 실패는 check_needed. 재수집 가격은 공용 `source_items` 에도 반영
+- 관리자 웹: 후보 상세에 등록 완료 폼 · 감시 상태 · 변동 이벤트 결정 버튼, **주문 관리** 메뉴(주문 목록 · 추가 · 상세: 체크리스트 8단계 · 통관부호 확인 · 소스 주문일 → 예상 도착일(배송 프로필 lead_days) · 실제 원가 입력과 예상 대비 차이 · 월 손익 KPI)
+- `app.worker run --stage monitor`, 스케줄은 수집 배치 직후 `monitor_interval_days` 지났으면 자동. 폴러 `m:` 콜백
+- 실측 #17: listed 표시 → 재수집 → 변동 없음(ok). 테스트 55개
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

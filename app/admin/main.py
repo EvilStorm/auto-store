@@ -25,9 +25,11 @@ templates = Jinja2Templates(directory=str(ROOT / "templates" / "admin"))
 
 MENU = [
     ("/", "대시보드"), ("/candidates", "후보 목록"), ("/watch", "관심 카테고리"), ("/sources", "내 소스"),
-    ("/settings", "설정"), ("/dict", "사전 관리"), ("/logs", "실행 로그"), ("/instant", "즉시 분석"),
+    ("/settings", "설정"), ("/dict", "사전 관리"), ("/logs", "실행 로그"), ("/instant", "즉시 분석"), ("/orders", "주문 관리"),
 ]
-STAGES = ("collect", "lookup", "score", "notify")
+STAGES = ("collect", "lookup", "score", "notify", "content", "package", "monitor")
+ORDER_STATUSES = ["new", "pccc_check", "source_ordered", "at_forwarder", "shipped", "customs", "delivered", "canceled"]
+ORDER_KO = {"new": "신규", "pccc_check": "통관부호 확인", "source_ordered": "소스 주문 완료", "at_forwarder": "배대지 입고", "shipped": "발송", "customs": "통관", "delivered": "배송 완료", "canceled": "취소"}
 JOBS: dict[str, dict] = {}          # stage → {proc, log, started}
 _client_cache: dict = {"c": None, "uid": None, "at": 0.0, "profile": None}
 
@@ -202,8 +204,10 @@ def candidate_detail(cid: int, request: Request):
     detail = (c.table("source_item_details").select("options_json, images, package_weight_g, fetched_at").eq("source_item_id", item["id"]).limit(1).execute().data or [None])[0]
     content = (c.table("generated_contents").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     pkg = (c.table("packages").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
+    listing = (c.table("listings").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
+    events = c.table("monitor_events").select("*").eq("candidate_id", cid).order("created_at", desc=True).limit(20).execute().data if listing else []
     return page(request, "candidate.html", profile=prof, cand=cand, item=item, norm=norm, sig=sig, matches=merged, card=card, logo=logo, flag_ko=FLAG_KO,
-                detail=detail, content=content, pkg=pkg)
+                detail=detail, content=content, pkg=pkg, listing=listing, events=events)
 
 
 @app.post("/candidates/{cid}/stage2/{action}")
@@ -531,6 +535,148 @@ def instant_process(request: Request):
     proc = subprocess.Popen([sys.executable, "-m", "app.instant", "--queue", "--limit", "5", "--telegram"], cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, env=env)
     JOBS["instant"] = {"proc": proc, "log": logf, "started": datetime.now().strftime("%H:%M:%S"), "fh": fh}
     return RedirectResponse("/instant?m=처리 시작 (대시보드에서 로그 확인)", status_code=303)
+
+
+# ───────────────────────── 등록 완료 · 감시 ─────────────────────────
+@app.post("/candidates/{cid}/listed")
+def candidate_listed(cid: int, request: Request, store_product_no: str = Form(""), sale_price_krw: int = Form(...)):
+    from app.pipeline.monitor import mark_listed
+
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    try:
+        mark_listed(c, uid, cid, store_product_no=store_product_no or None, sale_price_krw=sale_price_krw)
+        msg = f"등록 완료 표시 → listed · 감시 대상 (판매가 {sale_price_krw:,}원)"
+    except Exception as e:
+        msg = f"실패: {type(e).__name__}: {str(e)[:200]}"
+    return RedirectResponse(f"/candidates/{cid}?m={msg}", status_code=303)
+
+
+@app.post("/monitor/{eid}/{action}")
+def monitor_decide(eid: int, action: str, request: Request):
+    from app.pipeline.monitor import decide_monitor
+
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    label = decide_monitor(c, uid, eid, action)
+    back = request.headers.get("referer") or "/candidates"
+    return RedirectResponse(f"{back.split('?m=')[0]}?m={label}", status_code=303)
+
+
+# ───────────────────────── 주문 관리 ─────────────────────────
+def _lead_days_for(c, candidate_id: int | None) -> int:
+    if not candidate_id:
+        return 12
+    cand = c.table("candidates").select("source_item_id").eq("id", candidate_id).limit(1).execute().data
+    if not cand:
+        return 12
+    item = c.table("source_items").select("source_id").eq("id", cand[0]["source_item_id"]).limit(1).execute().data
+    us = repo.my_user_sources(c).get(item[0]["source_id"]) if item else None
+    if us and us.get("shipping_profile_id"):
+        sp = c.table("shipping_profiles").select("lead_days").eq("id", us["shipping_profile_id"]).limit(1).execute().data
+        if sp:
+            return int(sp[0]["lead_days"] or 12)
+    return 12
+
+
+@app.get("/orders", response_class=HTMLResponse)
+def orders(request: Request):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    status = request.query_params.get("status", "")
+    q = c.table("orders").select("*").order("ordered_at", desc=True).limit(200)
+    if status:
+        q = q.eq("status", status)
+    rows = q.execute().data
+    cids = [r["candidate_id"] for r in rows if r.get("candidate_id")]
+    lst = {l["candidate_id"]: l for l in c.table("listings").select("candidate_id, store_product_no, sale_price_krw, source_item_id").in_("candidate_id", cids).execute().data} if cids else {}
+    items = {i["id"]: i for i in c.table("source_items").select("id, title_raw, url").in_("id", [l["source_item_id"] for l in lst.values()]).execute().data} if lst else {}
+    costs = {x["order_id"]: x for x in c.table("order_costs").select("order_id, total_actual_krw").in_("order_id", [r["id"] for r in rows]).execute().data} if rows else {}
+    listings = c.table("listings").select("candidate_id, store_product_no, sale_price_krw, source_item_id").execute().data
+    litems = {i["id"]: i for i in c.table("source_items").select("id, title_raw").in_("id", [l["source_item_id"] for l in listings]).execute().data} if listings else {}
+    pnl = (c.rpc("my_month_pnl").execute().data or [{}])[0]
+    pnl["profit"] = int(pnl.get("revenue_krw", 0) or 0) - int(pnl.get("actual_cost_krw", 0) or 0) - int(pnl.get("fee_krw", 0) or 0) - int(float(pnl.get("api_cost_krw", 0) or 0))
+    return page(request, "orders.html", profile=prof, rows=rows, lst=lst, items=items, costs=costs, listings=listings, litems=litems, statuses=ORDER_STATUSES, ko=ORDER_KO, status=status, pnl=pnl)
+
+
+@app.post("/orders/add")
+def orders_add(request: Request, store_order_no: str = Form(...), candidate_id: str = Form(""), option_name: str = Form(""), qty: int = Form(1), paid_krw: int = Form(0), memo: str = Form("")):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    cid = int(candidate_id) if candidate_id else None
+    try:
+        c.table("orders").upsert({"user_id": uid, "store_order_no": store_order_no.strip(), "candidate_id": cid, "option_name": option_name or None, "qty": qty, "paid_krw": paid_krw, "memo": memo or None},
+                                 on_conflict="user_id,store_order_no").execute()
+        msg = "주문 추가"
+    except Exception as e:
+        msg = f"실패: {type(e).__name__}"
+    return RedirectResponse(f"/orders?m={msg}", status_code=303)
+
+
+@app.get("/orders/{oid}", response_class=HTMLResponse)
+def order_detail(oid: int, request: Request):
+    from app.pipeline.monitor import eta
+
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    rows = c.table("orders").select("*").eq("id", oid).limit(1).execute().data
+    if not rows:
+        return RedirectResponse("/orders?m=없는 주문", status_code=303)
+    o = rows[0]
+    lst = item = cand = None
+    if o.get("candidate_id"):
+        lst = (c.table("listings").select("*").eq("candidate_id", o["candidate_id"]).limit(1).execute().data or [None])[0]
+        cand = (c.table("candidates").select("cost_breakdown_json, suggested_price_krw").eq("id", o["candidate_id"]).limit(1).execute().data or [None])[0]
+        if lst:
+            item = (c.table("source_items").select("title_raw, url, source_item_id, price_tiers_json, moq").eq("id", lst["source_item_id"]).limit(1).execute().data or [None])[0]
+    cost = (c.table("order_costs").select("*").eq("order_id", oid).limit(1).execute().data or [None])[0]
+    lead = _lead_days_for(c, o.get("candidate_id"))
+    est = int((cand or {}).get("cost_breakdown_json", {}).get("total_cost_krw") or 0) * int(o.get("qty") or 1) if cand else None
+    rates = {r["currency"]: float(r["rate_krw"]) for r in c.rpc("latest_exchange_rates").execute().data}
+    return page(request, "order.html", profile=prof, o=o, lst=lst, item=item, cand=cand, cost=cost, lead=lead, est=est, statuses=ORDER_STATUSES, ko=ORDER_KO,
+                eta=eta(date.fromisoformat(o["source_ordered_at"]) if o.get("source_ordered_at") else None, lead), rates=rates)
+
+
+@app.post("/orders/{oid}/status")
+def order_status(oid: int, request: Request, status: str = Form(...), source_order_no: str = Form(""), source_ordered_at: str = Form(""), tracking_no: str = Form(""),
+                 buyer_pccc_ok: str = Form("off"), memo: str = Form("")):
+    from app.pipeline.monitor import eta
+
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    if status not in ORDER_STATUSES:
+        return RedirectResponse(f"/orders/{oid}?m=상태 오류", status_code=303)
+    o = c.table("orders").select("candidate_id").eq("id", oid).limit(1).execute().data[0]
+    upd = {"status": status, "buyer_pccc_ok": buyer_pccc_ok == "on", "memo": memo or None}
+    if source_order_no:
+        upd["source_order_no"] = source_order_no
+    if tracking_no:
+        upd["tracking_no"] = tracking_no
+    if source_ordered_at:
+        upd["source_ordered_at"] = source_ordered_at
+        d = eta(date.fromisoformat(source_ordered_at), _lead_days_for(c, o.get("candidate_id")))
+        upd["eta_date"] = d.isoformat() if d else None
+    c.table("orders").update(upd).eq("id", oid).execute()
+    return RedirectResponse(f"/orders/{oid}?m={ORDER_KO.get(status, status)} 저장", status_code=303)
+
+
+@app.post("/orders/{oid}/costs")
+def order_costs(oid: int, request: Request, source_paid_src: float = Form(0), currency: str = Form("CNY"), rate: float = Form(0), proxy_fee_krw: int = Form(0),
+                forwarder_fee_krw: int = Form(0), customs_krw: int = Form(0), other_krw: int = Form(0), estimated_krw: str = Form("")):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    total = int(round(source_paid_src * rate)) + proxy_fee_krw + forwarder_fee_krw + customs_krw + other_krw
+    c.table("order_costs").upsert({"order_id": oid, "user_id": uid, "source_paid_src": source_paid_src, "currency": currency, "rate": rate, "proxy_fee_krw": proxy_fee_krw,
+                                   "forwarder_fee_krw": forwarder_fee_krw, "customs_krw": customs_krw, "other_krw": other_krw, "total_actual_krw": total,
+                                   "estimated_krw": int(estimated_krw) if estimated_krw else None}, on_conflict="order_id").execute()
+    return RedirectResponse(f"/orders/{oid}?m=실제 원가 {total:,}원 저장", status_code=303)
 
 
 @app.get("/healthz", response_class=PlainTextResponse)

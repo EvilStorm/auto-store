@@ -14,6 +14,7 @@ MERGE_FIELDS = (
     "price_basis", "same_image_seller_cap", "naver_top_n", "instant_daily_limit",
     "exact_threshold", "similar_threshold",
     "margin_threshold", "daily_candidate_n", "llm_rejudge_top_n", "daily_llm_cap", "collect_at", "notify_at",
+    "monitor_interval_days", "monitor_price_threshold",
     "llm_provider", "llm_model",
 )
 
