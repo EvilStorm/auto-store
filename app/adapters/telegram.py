@@ -14,12 +14,23 @@ class Bot:
     token: str
     chat_id: str
 
-    def _call(self, method: str, **params):
-        r = httpx.post(API.format(token=self.token, method=method), json=params, timeout=30.0)
+    def _call(self, method: str, timeout: float = 30.0, **params):
+        r = httpx.post(API.format(token=self.token, method=method), json=params, timeout=timeout)
         data = r.json()
         if not data.get("ok"):
             raise RuntimeError(f"telegram {method}: {data.get('description')}")
         return data["result"]
+
+    def send_photo_bytes(self, data: bytes, caption: str, *, buttons: list[list[tuple[str, str]]] | None = None, filename: str = "photo.jpg") -> int:
+        """이미지 바이트를 직접 업로드. URL 방식은 텔레그램 서버가 원본(중국 CDN 등)을 받아오느라 느리거나 실패한다."""
+        fields = {"chat_id": self.chat_id, "caption": caption[:1000]}
+        if buttons:
+            fields["reply_markup"] = json.dumps({"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in buttons]})
+        r = httpx.post(API.format(token=self.token, method="sendPhoto"), data=fields, files={"photo": (filename, data, "image/jpeg")}, timeout=20.0)
+        res = r.json()
+        if not res.get("ok"):
+            raise RuntimeError(f"telegram sendPhoto(upload): {res.get('description')}")
+        return res["result"]["message_id"]
 
     def send_text(self, text: str, *, buttons: list[list[tuple[str, str]]] | None = None, disable_preview: bool = True) -> int:
         kw = {"chat_id": self.chat_id, "text": text[:4000], "disable_web_page_preview": disable_preview}
@@ -28,13 +39,21 @@ class Bot:
         return self._call("sendMessage", **kw)["message_id"]
 
     def send_photo(self, photo_url: str, caption: str, *, buttons: list[list[tuple[str, str]]] | None = None) -> int:
+        """사진 카드. 1) 우리가 내려받아 업로드(빠름) 2) 안 되면 URL 전달(텔레그램이 받아옴, 10초) 3) 그래도 안 되면 텍스트."""
+        from app.vision.phash import fetch
+
+        ib = fetch(photo_url, timeout=8.0)
+        if ib and len(ib.data) <= 5 * 1024 * 1024:
+            try:
+                return self.send_photo_bytes(ib.data, caption, buttons=buttons)
+            except Exception:
+                pass
         kw = {"chat_id": self.chat_id, "photo": photo_url, "caption": caption[:1000]}
         if buttons:
             kw["reply_markup"] = {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in buttons]}
         try:
-            return self._call("sendPhoto", **kw)["message_id"]
+            return self._call("sendPhoto", timeout=10.0, **kw)["message_id"]
         except Exception:
-            # 이미지 URL 을 텔레그램이 못 가져오면 텍스트로
             return self.send_text(caption, buttons=buttons)
 
     def edit_buttons(self, message_id: int, buttons: list[list[tuple[str, str]]] | None) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from datetime import date, datetime, timezone
 from typing import Literal
 
@@ -123,18 +124,24 @@ def rejudge(c, llm: LLM, item: dict, norm: dict, cands: list[dict], image_url: s
     return out
 
 
-def pick_top(c, run_date: date, n: int) -> list[dict]:
-    rows = c.table("candidates").select("*").eq("run_date", run_date.isoformat()).eq("status", "candidate").is_("card_sent_at", "null").order("score", desc=True).limit(n * 2).execute().data
-    return rows
+def pick_top(c, run_date: date, n: int, *, resend: bool = False) -> list[dict]:
+    q = c.table("candidates").select("*").eq("run_date", run_date.isoformat()).eq("status", "candidate")
+    if not resend:
+        q = q.is_("card_sent_at", "null")
+    return q.order("score", desc=True).limit(n * 2).execute().data
 
 
-def run(c, user_id: str, *, run_date: date | None = None, dry_run: bool = False, use_llm: bool = True) -> dict:
+def _log(msg: str) -> None:
+    print(time.strftime("%H:%M:%S"), msg, flush=True)
+
+
+def run(c, user_id: str, *, run_date: date | None = None, dry_run: bool = False, use_llm: bool = True, limit: int | None = None, resend: bool = False) -> dict:
     from app import repo
     from app.adapters.telegram import bot_from, callback_data
 
     today = run_date or date.today()
-    n = settings.daily_candidate_n
-    top = pick_top(c, today, n)
+    n = min(settings.daily_candidate_n, limit) if limit else settings.daily_candidate_n
+    top = pick_top(c, today, n, resend=resend)
     if not top:
         return {"sent": 0, "note": "오늘 미전송 후보 없음"}
     ids = [t["source_item_id"] for t in top]
@@ -150,6 +157,8 @@ def run(c, user_id: str, *, run_date: date | None = None, dry_run: bool = False,
         llm = get_llm()
     bot = None if dry_run else bot_from(c)
     sent, dropped, texts = 0, 0, []
+    t_start = time.time()
+    _log(f"후보 {len(top)}건 중 최대 {n}건 · LLM {'사용' if llm else '없음'} · {'dry-run' if dry_run else '발송'}")
     for cand in top:
         if sent >= n:
             break
@@ -157,12 +166,14 @@ def run(c, user_id: str, *, run_date: date | None = None, dry_run: bool = False,
         if not item or not norm:
             continue
         img = item.get("main_image_url") or ""
+        t0 = time.time()
         logo = None
         if llm:
             try:
                 logo = logo_check(c, llm, item["id"], img)
             except Exception as e:
                 logo = {"logo_detected": None, "logo_reason": f"확인 실패 {type(e).__name__}"}
+            _log(f"  #{item['id']} 로고 확인 {time.time() - t0:.1f}s → {'감지' if logo and logo.get('logo_detected') else '없음'}")
             if logo and logo.get("logo_detected"):
                 c.table("candidates").update({"status": "rejected_1", "decision": "brand", "decided_at": datetime.now(timezone.utc).isoformat(), "brand_vision_checked": True}).eq("id", cand["id"]).execute()
                 c.table("rejections").insert({"user_id": user_id, "source_id": item["source_id"], "source_item_id": item["source_item_id"], "reason": "brand",
@@ -175,21 +186,27 @@ def run(c, user_id: str, *, run_date: date | None = None, dry_run: bool = False,
         nitems = {x["nv_mid"]: x for x in c.table("naver_items").select("nv_mid, title, price, review_count, image_url, mall").in_("nv_mid", list(nv)).execute().data} if nv else {}
         merged = [{**nitems.get(m["nv_mid"], {}), **m} for m in mrows if m["nv_mid"] in nitems]
         if llm and settings.llm_rejudge_top_n and sent < settings.llm_rejudge_top_n and merged and not any(m["method"] == "llm" for m in merged):
+            t1 = time.time()
             try:
                 merged = rejudge(c, llm, item, norm, sorted(merged, key=lambda m: -(m.get("similarity") or 0)), img) or merged
+                _log(f"  #{item['id']} 재판정 {time.time() - t1:.1f}s → 정확 {sum(1 for m in merged if m.get('relation') == 'exact')} · 유사 {sum(1 for m in merged if m.get('relation') == 'similar')}")
             except Exception as e:
                 merged.append({"title": "재판정 실패", "price": 0, "reason": type(e).__name__})
+                _log(f"  #{item['id']} 재판정 실패 {type(e).__name__}")
         exact_first = sorted(merged, key=lambda m: (m.get("relation") != "exact", -(m.get("similarity") or 0)))
         text = render_card(item, norm, sig, cand, matches=exact_first, logo=logo)
         texts.append(text)
         if bot:
+            t2 = time.time()
             buttons = [[("승인", callback_data("c", cand["id"], "approve")), ("거절", callback_data("c", cand["id"], "reject")), ("보류", callback_data("c", cand["id"], "hold"))]]
             bot.send_photo(img, text, buttons=buttons) if img else bot.send_text(text, buttons=buttons)
             c.table("candidates").update({"card_sent_at": datetime.now(timezone.utc).isoformat(), "brand_vision_checked": bool(llm)}).eq("id", cand["id"]).execute()
+            _log(f"  #{item['id']} 발송 {time.time() - t2:.1f}s (카드 합계 {time.time() - t0:.1f}s)")
         sent += 1
     llm_calls = sum(1 for u in (llm.usage if llm else []) if not u.cache_hit)
     cost = llm.total_cost_krw() if llm else 0.0
-    summary = f"오늘 카드 {sent}건 · 로고 감지로 제외 {dropped} · LLM 호출 {llm_calls}회(캐시 적중 {llm.cache_hits() if llm else 0}) · 추정 {cost:,.0f}원"
+    summary = f"오늘 카드 {sent}건 · 로고 감지로 제외 {dropped} · LLM 호출 {llm_calls}회(캐시 적중 {llm.cache_hits() if llm else 0}) · 추정 {cost:,.0f}원 · {time.time() - t_start:.0f}초"
+    _log(summary)
     if bot and sent:
         bot.send_text(summary)
     if llm and not dry_run:
@@ -212,6 +229,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--limit", type=int, help="이번 실행에서 보낼 최대 건수 (테스트)")
+    ap.add_argument("--resend", action="store_true", help="이미 보낸 카드도 다시 (테스트)")
     a = ap.parse_args(argv)
     from app.db import current_user_id, user_client
     from app.user_settings import ensure_user_settings
@@ -219,10 +238,12 @@ def main(argv=None) -> int:
     c = user_client()
     uid = current_user_id(c)
     ensure_user_settings(c, uid)
-    r = run(c, uid, dry_run=a.dry_run, use_llm=not a.no_llm)
-    for t in r.get("texts", []):
-        print(t, "\n")
-    print(r.get("summary") or r.get("note"))
+    r = run(c, uid, dry_run=a.dry_run, use_llm=not a.no_llm, limit=a.limit, resend=a.resend)
+    if a.dry_run:
+        for t in r.get("texts", []):
+            print(t, "\n")
+    if r.get("note"):
+        print(r["note"])
     return 0
 
 
