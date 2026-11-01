@@ -64,9 +64,18 @@ def login(email: str | None = None, password: str | None = None) -> dict:
     email = email or os.getenv("APP_LOGIN_EMAIL") or input("이메일: ").strip()
     password = password or getpass.getpass("비밀번호: ")
     c = anon_client()
-    resp = c.auth.sign_in_with_password({"email": email, "password": password})
+    try:
+        resp = c.auth.sign_in_with_password({"email": email, "password": password})
+    except Exception as e:  # supabase_auth.errors.AuthApiError 등
+        msg = str(e)
+        hint = ""
+        if "Invalid login credentials" in msg:
+            hint = " — 이메일 오타 또는 비밀번호 불일치. 계정이 있는지는 scripts/bootstrap_admin.py --email <주소> 로 확인(있으면 건너뜀)"
+        elif "Email not confirmed" in msg:
+            hint = " — 이메일 미확인. bootstrap_admin 으로 만든 계정은 확인된 상태이니, 대시보드에서 만든 계정이면 Confirm 처리"
+        raise SystemExit(f"로그인 실패 ({settings.app_env} · {email}): {msg}{hint}")
     if not resp.session:
-        raise RuntimeError("로그인 실패: 세션이 없습니다")
+        raise SystemExit("로그인 실패: 세션이 없습니다")
     save_session(resp.session, email=email)
     return {"email": email, "user_id": resp.user.id if resp.user else None}
 
