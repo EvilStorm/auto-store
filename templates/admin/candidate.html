@@ -61,6 +61,23 @@
 </section>
 
 <section>
+<article id="cost">
+  <header><strong>원가 구성</strong> <span class="muted">1688 판매가에서 총원가까지 — 내 배송 프로필 · 수수료 설정으로 계산한 당시 값</span></header>
+  {% if cost_sections %}
+  <div class="cost-grid">
+  {% for sec in cost_sections %}
+    <div class="cost-sec {{ 'summary' if sec.subtotal is none and loop.last else '' }}">
+      <div class="cost-h"><span>{{ sec.title }}</span>{% if sec.subtotal is not none %}<span class="cost-sub">{{ sec.subtotal|won }}</span>{% endif %}</div>
+      {% if sec.sub %}<div class="muted" style="font-size:.75rem;margin:-.2rem 0 .3rem">{{ sec.sub }}</div>{% endif %}
+      <table class="cost">{% for label, v, note in sec.rows %}
+        <tr><td>{{ label }}<br><small class="muted">{{ note }}</small></td><td>{{ v|won if v is number else v }}</td></tr>
+      {% endfor %}</table>
+    </div>
+  {% endfor %}
+  </div>
+  {% else %}<p class="muted">원가 계산 전입니다 (④ 점수 단계에서 계산).</p>{% endif %}
+</article>
+
 <article>
   <header><strong>국내 비교 상품 {{ matches|length }}건</strong> <span class="muted">정확 {{ sig.exact_count or 0 }} · 유사 {{ sig.similar_count or 0 }} · 무관 {{ n_unrelated }} · 가격 평균 {{ sig.price_mean|won }} / 중앙 {{ sig.price_median|won }} / 최저 {{ sig.price_min|won }}</span></header>
   <div class="help">네이버 통합검색 쇼핑 블록에서 검색어별 상위 결과를 모아 소스 이미지와 비교합니다. <b>유사</b>는 "같은 종류"라 국내 가격대의 참고치이고, <b>정확</b>(같은 상품)은 동일 사진이거나 카드 발송 때 LLM 재판정에서 확정됩니다. <b>무관</b>은 비교했지만 유사도가 기준 미만인 것입니다.</div>
@@ -121,23 +138,6 @@
         <form method="post" action="/monitor/{{ ev.id }}/suspend" class="inline"><button class="secondary">판매 중지</button></form>
         <form method="post" action="/monitor/{{ ev.id }}/ignore" class="inline"><button class="outline">무시</button></form></span>{% else %} · 결정 {{ ev.decision }}{% endif %}</div>{% endfor %}
   {% endif %}
-</article>
-
-<article id="cost">
-  <header><strong>원가 구성</strong> <span class="muted">1688 판매가에서 총원가까지 — 내 배송 프로필 · 수수료 설정으로 계산한 당시 값</span></header>
-  {% if cost_sections %}
-  <div class="cost-grid">
-  {% for sec in cost_sections %}
-    <div class="cost-sec {{ 'summary' if sec.subtotal is none and loop.last else '' }}">
-      <div class="cost-h"><span>{{ sec.title }}</span>{% if sec.subtotal is not none %}<span class="cost-sub">{{ sec.subtotal|won }}</span>{% endif %}</div>
-      {% if sec.sub %}<div class="muted" style="font-size:.75rem;margin:-.2rem 0 .3rem">{{ sec.sub }}</div>{% endif %}
-      <table class="cost">{% for label, v, note in sec.rows %}
-        <tr><td>{{ label }}<br><small class="muted">{{ note }}</small></td><td>{{ v|won if v is number else v }}</td></tr>
-      {% endfor %}</table>
-    </div>
-  {% endfor %}
-  </div>
-  {% else %}<p class="muted">원가 계산 전입니다 (④ 점수 단계에서 계산).</p>{% endif %}
 </article>
 <article>
   <header><strong>텔레그램 카드 원문</strong></header>
