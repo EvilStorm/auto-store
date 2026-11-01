@@ -9,7 +9,7 @@
 | [DESIGN.md](DESIGN.md) | 시스템 설계서 v3. Supabase 공용/개인 데이터, 발굴 우선, AI 최소화. 워크플로우, 데이터 모델(RLS), 단계별 상세, 관리자 화면, 구현 순서 |
 | [SETUP.md](SETUP.md) | 윈도우·맥 테스트 환경 준비와 실행 순서 |
 | [figma/README.md](figma/README.md) | Figma 기획 보드 반영 스크립트와 실행 방법 (v2까지 반영) |
-| [.env.example](.env.example) | 환경 변수 목록 (Supabase 접속, AI 키, 첫 로그인 때 올라가는 기본값) |
+| [.env.example](.env.example) | 환경 변수 템플릿. `.env.dev` / `.env.prd` 로 복사해 쓰고 `APP_ENV` 로 고른다 (Supabase 접속, AI 키, 첫 로그인 때 올라가는 기본값) |
 | Figma 기획 보드 | https://www.figma.com/design/GyRht7DCujol5Trh8VQf8r/?node-id=112-2 (Page 3) |
 
 **업무 정의의 기준은 Figma 보드**이고, DESIGN.md는 그 글 버전이다. 둘이 어긋나면 Figma를 따른다. **단, v3(2026-11-01) 변경분은 아직 Figma에 반영되지 않았으므로 반영 전까지는 DESIGN.md v3를 따른다.**
@@ -155,7 +155,7 @@ v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python -m playwright install chromium
-copy .env.example .env      # OPENAI_API_KEY 만 채우면 된다 (LLM_PROVIDER 기본 openai, 네이버 키 불필요)
+copy .env.example .env.dev  # OPENAI_API_KEY 만 채우면 된다 (LLM_PROVIDER 기본 openai, 네이버 키 불필요). 운영은 .env.prd + $env:APP_ENV="prd"
 
 # 2) 실행
 .venv\Scripts\python -m app.instant https://detail.1688.com/offer/XXXXXXXX.html
@@ -177,5 +177,6 @@ copy .env.example .env      # OPENAI_API_KEY 만 채우면 된다 (LLM_PROVIDER 
 - **2026-11-01 v3 설계 전환.** 로컬 SQLite 폐기 → Supabase 단일 DB, 공용/개인 데이터 분리와 RLS, 계정 로그인, 발굴 우선, AI 최소화(발굴 0회/건), CLIP을 MVP로 승격. 계기: 두 PC를 오가며 쓰려는 요구 + 1건당 LLM 3회(67원)가 카테고리 배치에선 비용·차단 위험으로 불가.
 - Figma 보드는 **v2까지 반영**되어 있고, v3 반영 스크립트 `figma/06_v3_supabase_and_discovery.js`는 **작성 완료(2026-11-01), 실행 대기**다. 사용자가 Scripter로 06 → 05 순서로 실행하면 03·04·09가 v3로 재생성되고 10(데이터 모델)·11(발굴 배치)이 추가된다. 실행 전까지는 DESIGN.md v3가 기준. 실행 후에는 이 README 14행의 예외 문구와 이 줄을 지운다.
 - Figma Starter 플랜의 MCP 호출 한도(월 20회)가 소진되어 변경분은 `figma/` 폴더 스크립트를 사용자가 **Scripter**로 직접 실행하는 방식이다. 실행 순서와 주의점은 [figma/README.md](figma/README.md).
+- 2026-11-01 환경 파일을 **`.env.dev` / `.env.prd`** 로 분리. `APP_ENV`(기본 dev)로 고르고 `python -m app.config` 로 확인. `.gitignore` 는 `.env*` + `!.env.example`. dev 와 prd 는 서로 다른 Supabase 프로젝트를 쓰는 전제.
 - 2026-11-01 회사 윈도우 PC 환경 세팅 완료(Python 3.12.10, .venv, Chromium 156). 전체 분석 1건 성공(66초, 67원). 윈도우에서 3.12 설치 후에도 `python`이 3.10을 가리켰던 원인은 **시스템 PATH에 남은 Python310 항목**(사용자 PATH보다 먼저 평가됨) — SETUP.md 오류 표에 추가 예정.
 - 설계 대화는 소크라테스식 문답으로 진행했다. 새 결정이 나오면 DESIGN.md 1장 표와 이 README 6장 표를 함께 갱신한다.

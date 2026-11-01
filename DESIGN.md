@@ -270,7 +270,7 @@ RawDetail:   RawListing + options[], images[], attrs_full, package_weight_raw
 ```
 
 - **PC는 무상태 워커**다. 분석 이력, 설정, 후보, 캐시 전부 Supabase에 있다. 다른 PC에서 로그인하면 그대로 이어진다.
-- **PC에 남는 것** 세 가지: (1) 로그인 세션 토큰(`~/.auto-store/session.json`, 재로그인으로 재생성) (2) 1688 등 로그인이 필요한 소스의 브라우저 프로필(쿠키가 기기에 묶여 이식 불가, PC마다 1회 로그인) (3) CLIP 모델 파일(첫 실행 시 자동 다운로드).
+- **PC에 남는 것** 세 가지: (1) 로그인 세션 토큰(`~/.auto-store/session.json`, 재로그인으로 재생성) (2) 1688 등 로그인이 필요한 소스의 브라우저 프로필(쿠키가 기기에 묶여 이식 불가, PC마다 1회 로그인) (3) CLIP 모델 파일(첫 실행 시 자동 다운로드). 그리고 접속 정보인 환경 파일 `.env.dev` / `.env.prd`(상태가 아니라 "어느 Supabase를 보는가"의 선택).
 - **같은 계정의 PC 둘**: `batch_locks (user_id, run_date, kind)` 유니크 제약으로 먼저 insert한 PC가 실행. 텔레그램 폴링도 `worker_leases` 임대(heartbeat)를 가진 PC 하나만 한다(11장).
 
 ### 4.2 기술 스택
@@ -399,7 +399,7 @@ v2의 `collected → normalized → filtered_out → matched → below_margin`�
 
 ### ⓪ 로그인·세션
 - `python -m app.auth login`: 이메일·비밀번호 → Supabase Auth → access/refresh 토큰을 `~/.auto-store/session.json`(또는 OS 키링)에 저장. 이후 모든 명령은 세션을 복원해 anon 키 + JWT로 호출한다. 만료 시 refresh, 실패 시 재로그인 안내.
-- 첫 로그인 시 `user_settings`가 없으면 `.env`의 기본값으로 1행을 만든다(.env는 부트스트랩 전용, 이후 화면에서 수정).
+- 첫 로그인 시 `user_settings`가 없으면 `.env.{APP_ENV}`의 기본값으로 1행을 만든다(환경 파일은 접속 정보 + 부트스트랩 전용, 이후 화면에서 수정).
 
 ### ① 소스별 수집기
 - 내 `user_watch_categories` × `user_sources.enabled` 를 순회. 어댑터는 공용 `sources` 정의로 만들고 로그인 프로필은 PC 로컬.
@@ -477,7 +477,7 @@ v2의 `collected → normalized → filtered_out → matched → below_margin`�
 11. **실행 로그** (개인): 날짜·단계·소스·건수·오류·PC
 12. **주문 관리** (개인, 2차): v2와 동일
 
-설정값의 출처: `.env`는 첫 로그인 때 `user_settings`를 채우는 부트스트랩이고, 이후는 화면 값(DB)이 유일한 진실이다. PC를 바꿔도 같은 값이 나온다.
+설정값의 출처: `.env.{APP_ENV}`(dev / prd)는 Supabase 접속 정보와, 첫 로그인 때 `user_settings`를 채우는 부트스트랩 기본값이다. 이후는 화면 값(DB)이 유일한 진실이고 PC를 바꿔도 같은 값이 나온다. dev와 prd는 서로 다른 Supabase 프로젝트를 가리키므로 설정도 환경별로 따로 쌓인다.
 
 ---
 
@@ -515,7 +515,7 @@ auto-store/
 │   └── seed/                     # canonical_categories.csv · category_aliases.csv · attribute_aliases.csv · brand_blacklist.csv · title_stopwords.csv · requirements.csv · naver_categories.csv · shipping_profile_templates.json
 ├── selectors/1688.yaml
 ├── templates/ · output/
-├── .env.example · requirements.txt · DESIGN.md · README.md · SETUP.md
+├── .env.example (→ .env.dev · .env.prd, APP_ENV 로 선택 · 둘 다 git 제외) · requirements.txt · DESIGN.md · README.md · SETUP.md
 ```
 
 `data/`는 더 이상 상태 저장소가 아니다. 남는 로컬 파일은 `data/profiles/<name>/`(브라우저 프로필)와 CLIP 모델 캐시만.
@@ -526,7 +526,7 @@ auto-store/
 
 | 항목 | 필요한 것 | 비고 |
 |---|---|---|
-| Supabase | 프로젝트 URL, **anon 키**(PC용), service_role 키(마이그레이션·시드 전용), 공개 버킷 | pgvector·Vault 확장 활성화. 이메일 로그인 활성화 |
+| Supabase | **dev · prd 프로젝트 2개**(`.env.dev` / `.env.prd`가 각각 가리킴). 각각 프로젝트 URL, **anon 키**(PC용), service_role 키(마이그레이션·시드 전용), 공개 버킷 | pgvector·Vault 확장 활성화. 이메일 로그인 활성화. 스키마 실험과 시드 재적재는 dev에서 |
 | 계정 | 본인 이메일로 Auth 사용자 1명 생성, profiles.role = admin | 시드 스크립트가 처리 |
 | 각 도매 사이트 | 로그인 계정 | PC별 최초 1회 수동 로그인 |
 | 네이버 | 키 불필요(크롤링) | 데이터랩 붙일 때 NAVER API HUB 키 |

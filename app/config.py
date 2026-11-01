@@ -1,14 +1,44 @@
-"""환경 설정. .env 를 읽고, 관리자 화면 저장값이 생기면 그 값이 우선하도록 settings 계층을 둔다(지금은 .env만)."""
+"""환경 설정.
+
+APP_ENV(dev | prd, 비우면 dev)에 따라 .env.dev 또는 .env.prd 를 읽는다. 두 파일은 git 에 올라가지 않는다.
+  PowerShell:  $env:APP_ENV="prd"; .venv\\Scripts\\python -m app.instant <URL>
+  zsh:         APP_ENV=prd .venv/bin/python -m app.instant <URL>
+우선순위: OS 환경변수 > .env.{APP_ENV}. 환경 파일이 없을 때만 옛 방식인 .env 를 읽는다(dev 키가 prd 로 새지 않도록 둘을 섞지 않는다).
+확인: python -m app.config  (어느 환경 · 어느 파일을 읽었고 어떤 키가 채워졌는지, 값은 보여주지 않음)
+관리자 화면 저장값(v3: Supabase user_settings)이 생기면 그 값이 우선하도록 settings 계층을 둔다(지금은 파일만).
+"""
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+ENVS = ("dev", "prd")
+
+
+def _pick_env() -> str:
+    env = (os.getenv("APP_ENV") or "dev").strip().lower()
+    if env not in ENVS:
+        # import 시점에 나는 오류라 CLI 의 utf-8 재설정보다 먼저다. 윈도우 cp949 콘솔에서 한글이 깨지지 않게 여기서 바꾼다
+        try:
+            sys.stderr.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+        raise SystemExit(f"APP_ENV 는 {' | '.join(ENVS)} 중 하나여야 합니다: {env!r}  (예: $env:APP_ENV=\"prd\" 또는 비워서 dev)")
+    return env
+
+
+APP_ENV = _pick_env()
+ENV_FILE: Path | None = None
+for _candidate in (ROOT / f".env.{APP_ENV}", ROOT / ".env"):
+    if _candidate.exists():
+        load_dotenv(_candidate, override=False)
+        ENV_FILE = _candidate
+        break
 
 
 def _f(key: str, default: float) -> float:
@@ -27,12 +57,20 @@ def _s(key: str, default: str = "") -> str:
 
 @dataclass
 class Settings:
+    # 환경
+    app_env: str = field(default_factory=lambda: APP_ENV)
+
     # AI
     llm_provider: str = field(default_factory=lambda: _s("LLM_PROVIDER", "openai"))
     llm_model: str = field(default_factory=lambda: _s("LLM_MODEL", ""))
     anthropic_api_key: str = field(default_factory=lambda: _s("ANTHROPIC_API_KEY"))
     google_ai_api_key: str = field(default_factory=lambda: _s("GOOGLE_AI_API_KEY"))
     openai_api_key: str = field(default_factory=lambda: _s("OPENAI_API_KEY"))
+
+    # Supabase (v3: DB · 인증 · 스토리지)
+    supabase_url: str = field(default_factory=lambda: _s("SUPABASE_URL"))
+    supabase_anon_key: str = field(default_factory=lambda: _s("SUPABASE_ANON_KEY"))
+    supabase_bucket: str = field(default_factory=lambda: _s("SUPABASE_BUCKET", "product-images"))
 
     # 네이버
     naver_client_id: str = field(default_factory=lambda: _s("NAVER_CLIENT_ID"))
@@ -79,3 +117,39 @@ class Settings:
 
 settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+
+# 비밀값은 "채워짐 / 비어 있음" 만 보여준다. SUPABASE_URL 은 어느 프로젝트(dev / prd)인지 구분용으로 값을 보여준다.
+_CHECK_KEYS = (
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_AI_API_KEY",
+    "EXIMBANK_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+)
+
+
+def describe() -> str:
+    lines = [
+        f"APP_ENV={APP_ENV}",
+        f"읽은 파일: {ENV_FILE.name if ENV_FILE else '(없음 — .env.' + APP_ENV + ' 를 만드세요: copy .env.example .env.' + APP_ENV + ')'}",
+    ]
+    for k in _CHECK_KEYS:
+        v = (os.getenv(k) or "").strip()
+        shown = v if k == "SUPABASE_URL" else ("채워짐" if v else "비어 있음")
+        lines.append(f"  {k:<22} {shown}")
+    lines.append(f"  LLM_PROVIDER={settings.llm_provider}  LLM_MODEL={settings.llm_model or '(제공자 기본)'}")
+    lines.append(f"  DATA_DIR={settings.data_dir}  INSTANT_ANALYSIS_DAILY_LIMIT={settings.instant_daily_limit}")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    print(describe())

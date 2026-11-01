@@ -1,5 +1,6 @@
-# 비밀값
-.env
+# 비밀값 · 환경 파일 (.env.dev · .env.prd · .env · ".env copy" 같은 변종 전부). 템플릿 .env.example 만 커밋한다
+.env*
+!.env.example
 *.key
 
 # 런타임 데이터

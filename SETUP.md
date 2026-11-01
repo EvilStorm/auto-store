@@ -1,7 +1,7 @@
 # 테스트 환경 준비 & 실행 순서 (윈도우 / 맥)
 
 집(맥)과 회사(윈도우)를 오가며 이어서 테스트할 때 쓰는 체크리스트다.
-위에서 아래로 순서대로 실행하면 된다. `.env` 와 `data/` 는 git 에 올라가지 않으므로 **PC마다 따로 만든다**.
+위에서 아래로 순서대로 실행하면 된다. 환경 파일(`.env.dev` / `.env.prd`)과 `data/` 는 git 에 올라가지 않으므로 **PC마다 따로 만든다**.
 
 > 지금 돌아가는 기능은 **URL 즉시 분석 CLI** 하나다. 구조 설명은 [README.md](README.md) 8-1, 설계는 [DESIGN.md](DESIGN.md).
 
@@ -56,16 +56,21 @@ python -m venv .venv
 
 ### 1-3. 환경 파일 (최초 1회)
 
+개발·운영을 `.env.dev` / `.env.prd` 두 파일로 나눈다. 실행할 환경은 `APP_ENV` 로 고르고, 비우면 `dev` 다.
+
 ```powershell
-copy .env.example .env
-notepad .env
+copy .env.example .env.dev
+notepad .env.dev
 ```
 
-채울 값은 [3. .env 에 채울 것](#3-env-에-채울-것) 참고.
+운영 Supabase 프로젝트가 준비되면 같은 방법으로 `.env.prd` 를 만든다. 채울 값은 [3. .env.dev / .env.prd 에 채울 것](#3-envdev--envprd-에-채울-것) 참고.
 
 ### 1-4. 동작 확인
 
 ```powershell
+# 환경 확인 (APP_ENV=dev · 읽은 파일 .env.dev 가 나오면 됨. 키는 채워짐/비어 있음만 표시)
+.venv\Scripts\python -m app.config
+
 # 브라우저 실행 확인 (chromium ok 가 나오면 됨)
 .venv\Scripts\python -c "from playwright.sync_api import sync_playwright as s; p=s().start(); b=p.chromium.launch(); print('chromium ok', b.version); b.close(); p.stop()"
 
@@ -85,6 +90,9 @@ notepad .env
 .venv\Scripts\python -m app.instant https://ko.aliexpress.com/item/1005013478517865.html
 .venv\Scripts\python -m app.instant --recent 10
 .venv\Scripts\python -m app.instant --show 20261030-091200
+
+# 운영 환경(.env.prd)으로 실행할 때 — 그 PowerShell 창에서만 유효
+$env:APP_ENV="prd"; .venv\Scripts\python -m app.instant <URL>
 ```
 
 ### 1-6. 1688 처럼 로그인이 필요한 소스
@@ -99,7 +107,9 @@ notepad .env
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
+| 3.12 를 설치했는데 `python --version` 이 여전히 3.10 | **시스템 PATH** 에 남은 `...\Python310` 항목. Windows 는 시스템 PATH 를 사용자 PATH 보다 먼저 보므로 사용자 PATH 맨 앞의 3.12 가 밀린다 | `시스템 변수 → Path` 에서 Python310 항목 삭제(관리자 권한) 후 새 창. 또는 PATH 를 안 고치고 `py -3.12 -m venv .venv` 로 venv 만 만들면 이후는 `.venv\Scripts\python` 이라 상관없다 |
 | `이 시스템에서 스크립트를 실행할 수 없으므로` | `Activate.ps1` 실행 정책 | activate 없이 `.venv\Scripts\python` 직접 사용, 또는 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `APP_ENV 는 dev \| prd 중 하나여야 합니다` | 오타 (`prod`, `production` 등) | `$env:APP_ENV="prd"` 또는 `Remove-Item Env:APP_ENV` (dev 로 복귀) |
 | 한글이 `?` 나 깨진 글자로 출력 | 콘솔 cp949 | CLI 가 utf-8 로 바꿔 출력하지만, 그래도 깨지면 `$env:PYTHONIOENCODING="utf-8"` 후 실행 |
 | `Download failed` / `ECONNRESET` (playwright install) | 회사망 프록시·방화벽 | `$env:HTTPS_PROXY="http://프록시:포트"` 지정 후 재시도 |
 | 다른 python 에 설치됨 | 전역 `python -m playwright` 실행 | 항상 `.venv\Scripts\python` 을 앞에 붙인다 |
@@ -135,15 +145,18 @@ python3.12 -m venv .venv
 ### 2-3. 환경 파일 (최초 1회)
 
 ```bash
-cp .env.example .env
-open -e .env        # 또는 nano .env
+cp .env.example .env.dev
+open -e .env.dev        # 또는 nano .env.dev
 ```
 
-채울 값은 [3. .env 에 채울 것](#3-env-에-채울-것) 참고.
+운영용은 같은 방법으로 `.env.prd`. 채울 값은 [3. .env.dev / .env.prd 에 채울 것](#3-envdev--envprd-에-채울-것) 참고.
 
 ### 2-4. 동작 확인
 
 ```bash
+# 환경 확인 (APP_ENV=dev · 읽은 파일 .env.dev)
+.venv/bin/python -m app.config
+
 # 브라우저 실행 확인
 .venv/bin/python -c "from playwright.sync_api import sync_playwright as s; p=s().start(); b=p.chromium.launch(); print('chromium ok', b.version); b.close(); p.stop()"
 
@@ -163,6 +176,9 @@ open -e .env        # 또는 nano .env
 .venv/bin/python -m app.instant https://ko.aliexpress.com/item/1005013478517865.html
 .venv/bin/python -m app.instant --recent 10
 .venv/bin/python -m app.instant --show 20261030-091200
+
+# 운영 환경(.env.prd)으로 실행할 때
+APP_ENV=prd .venv/bin/python -m app.instant <URL>
 ```
 
 ### 2-6. 1688 처럼 로그인이 필요한 소스
@@ -182,20 +198,25 @@ open -e .env        # 또는 nano .env
 
 ---
 
-## 3. .env 에 채울 것
+## 3. .env.dev / .env.prd 에 채울 것
 
-`.env.example` 을 복사한 뒤 아래만 채우면 지금 기능은 다 돈다. 나머지는 기본값 그대로 둬도 된다.
+`.env.example` 을 `.env.dev` 로 복사한 뒤 아래만 채우면 지금 기능은 다 돈다. 나머지는 기본값 그대로 둬도 된다.
+
+**dev 와 prd 의 차이**: 두 파일은 키 목록이 같고 값만 다르다. 핵심은 **Supabase 프로젝트가 다르다**는 것(스키마 실험·시드 재적재가 운영 데이터를 건드리지 않게). 그 밖에 dev 는 `LLM_MODEL=gpt-5-mini`, `MONTHLY_BUDGET_KRW=10000`, `DAILY_CANDIDATE_LIMIT=3`, `INSTANT_ANALYSIS_DAILY_LIMIT=10`, 테스트용 텔레그램 봇을 권장한다. `.env.example` 안의 "dev 권장 / prd 권장" 주석이 그 항목들이다. 환경 파일이 있으면 그것만 읽고 다른 환경 파일을 섞지 않으므로, `.env.prd` 에 비워둔 키는 비어 있는 채로 동작한다(dev 키가 운영으로 새지 않는다).
 
 | 키 | 필요 여부 | 설명 |
 |---|---|---|
+| `APP_ENV` | 선택 (OS 환경변수) | `dev` \| `prd`. 파일 안이 아니라 **실행하는 셸에서** 지정한다. 비우면 `dev` |
 | `OPENAI_API_KEY` | **필수** | LLM 추출·정규화·매칭 판정. 없으면 `--fetch-only` 만 된다 |
 | `LLM_PROVIDER` / `LLM_MODEL` | 선택 | 기본 `openai` / `gpt-5`. Claude 로 바꾸려면 `claude` + `ANTHROPIC_API_KEY` |
 | `EXIMBANK_API_KEY` | 선택 | 없으면 open.er-api.com 으로 자동 대체 |
 | `NAVER_CLIENT_ID/SECRET` | 불필요 | 쇼핑 검색 API 가 종료되어 크롤링을 쓴다. 비워둔다 |
-| `TELEGRAM_*`, `SUPABASE_*` | 아직 불필요 | 다음 단계에서 사용 |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | v3 구현 1단계부터 | 환경별로 다른 프로젝트. `SUPABASE_SERVICE_KEY` 는 마이그레이션·시드 때만 |
+| `TELEGRAM_*` | 아직 불필요 | 다음 단계에서 사용. dev 와 prd 는 다른 봇 |
 
-- API 키는 `.env` 에만 넣는다. 채팅·커밋·스크린샷에 올리지 않는다.
-- 두 PC 의 `.env` 는 각자 관리한다. 키를 옮길 때는 비밀번호 관리자나 암호화 메모로 옮긴다.
+- API 키는 `.env.dev` / `.env.prd` 에만 넣는다. 채팅·커밋·스크린샷에 올리지 않는다. `.gitignore` 가 `.env*` 를 통째로 막고 `.env.example` 만 예외다 — `.env copy` 같은 복사본도 안전하다.
+- 두 PC 의 환경 파일은 각자 관리한다. 키를 옮길 때는 비밀번호 관리자나 암호화 메모로 옮긴다.
+- 예전 방식의 `.env` 하나만 있는 PC 에서도 돌아간다(`.env.{APP_ENV}` 가 없을 때의 폴백). 새로 세팅할 때는 `.env.dev` 로 시작한다.
 
 ---
 
@@ -229,4 +250,4 @@ git commit -m "작업 내용"
 git push
 ```
 
-`data/`, `.env`, `.venv/` 는 `.gitignore` 에 있어서 올라가지 않는다. 분석 이력(`data/analyses/`)은 PC마다 따로 쌓인다.
+`data/`, `.env*`(`.env.example` 제외), `.venv/` 는 `.gitignore` 에 있어서 올라가지 않는다. `git add -A` 전에 `git status` 로 한 번 확인하는 습관을 둔다. 분석 이력(`data/analyses/`)은 아직 PC마다 따로 쌓인다(v3 7단계에서 Supabase 로 이전).
