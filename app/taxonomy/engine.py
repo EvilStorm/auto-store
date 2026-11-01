@@ -11,7 +11,10 @@
   template  {"op":"template","text":"{kw0} {capacity}","as":"q1","skip_if_missing":true}    문자열 조합
   default   {"op":"default","field":"item_type","from_category":true}                       카테고리 상속 / 고정값 {"value":...}
   flag      {"op":"flag","from":"title_raw","pattern":"充电|电池|USB","name":"maybe_electronics"}
+  terms     {"op":"terms","kind":"feature","from":"title_raw","as":"features","max":3}        사전 표기 전부 → 코드 목록 + features0/1/2 에 한국어
 
+map 은 코드와 함께 <as 에서 _code 를 뗀 이름>_ko (예: material_ko) 에 한국어 표기를 넣는다. queue_if_missing:false 면 미등록 표기를 큐에 안 넣는다
+(제목처럼 재질이 아예 없을 수도 있는 입력에 쓴다). keep_existing:true 면 이미 값이 있을 때 덮어쓰지 않는다.
 ctx 예약 필드: category (Category), dict (Dictionary), numbers (unit 결과), flags (set), missing (list: map 실패 표기)
 """
 from __future__ import annotations
@@ -108,9 +111,20 @@ def run(rules: list[dict], ctx: dict[str, Any], d: Dictionary) -> RunResult:
             elif op == "map":
                 raw = _get(ctx, r["from"])
                 code = d.code_for(r["kind"], str(raw)) if raw else None
-                if raw and code is None:
-                    ctx["missing"].append({"kind": r["kind"], "term": str(raw)})
-                ctx[r["as"]] = code
+                if raw and code is None and r.get("queue_if_missing", True):
+                    ctx["missing"].append({"kind": r["kind"], "term": str(raw)[:120]})
+                if code is not None or not r.get("keep_existing", False) or ctx.get(r["as"]) is None:
+                    if not (r.get("keep_existing") and ctx.get(r["as"])):
+                        ctx[r["as"]] = code
+                if ctx.get(r["as"]):
+                    ctx[r["as"].replace("_code", "") + "_ko"] = d.ko_for(r["kind"], ctx[r["as"]])
+            elif op == "terms":
+                # 텍스트에서 kind 사전 표기를 전부 찾아 코드 목록으로. as, as0, as1 … 에 넣어 템플릿이 쓰게 한다
+                text = str(_get(ctx, r["from"]) or "")
+                codes = d.terms_for(r["kind"], text, int(r.get("max", 5)))
+                ctx[r["as"]] = codes
+                for i, code in enumerate(codes):
+                    ctx[f"{r['as']}{i}"] = d.ko_for(r["kind"], code) or code
             elif op == "template":
                 text, ok = _fmt(r["text"], ctx)
                 if ok or not r.get("skip_if_missing", True):
@@ -140,9 +154,10 @@ def run(rules: list[dict], ctx: dict[str, Any], d: Dictionary) -> RunResult:
 
 def validate(rules: list[dict]) -> list[str]:
     """구조 검증 (LLM 이 만든 초안을 받을 때). 오류 메시지 목록, 비어 있으면 통과."""
-    allowed = {"select", "regex", "unit", "strip", "map", "template", "default", "flag"}
+    allowed = {"select", "regex", "unit", "strip", "map", "template", "default", "flag", "terms"}
     need = {"select": ["as"], "regex": ["from", "pattern", "as"], "unit": ["from"], "strip": ["from", "as"],
-            "map": ["kind", "from", "as"], "template": ["text", "as"], "default": ["field"], "flag": ["from", "pattern", "name"]}
+            "map": ["kind", "from", "as"], "template": ["text", "as"], "default": ["field"], "flag": ["from", "pattern", "name"],
+            "terms": ["kind", "from", "as"]}
     errs = []
     if not isinstance(rules, list):
         return ["rules 는 배열이어야 합니다"]

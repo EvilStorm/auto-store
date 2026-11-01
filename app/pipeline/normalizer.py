@@ -17,21 +17,24 @@ DEFAULT_RULES: list[dict] = [
     {"op": "unit", "from": "title_raw", "as": "numbers"},
     {"op": "select", "from": "attrs_raw", "path": "材质", "as": "material_raw"},
     {"op": "select", "from": "attrs_raw", "path": "品牌", "as": "brand_attr"},
+    # 속성표(상세)가 있으면 그것, 없으면(검색 카드) 제목에서 재질 표기를 찾는다 — 제목에 재질이 없는 건 정상이라 큐에 안 넣는다
     {"op": "map", "kind": "material", "from": "material_raw", "as": "material_code"},
+    {"op": "map", "kind": "material", "from": "title_raw", "as": "material_code", "queue_if_missing": False, "keep_existing": True},
+    {"op": "terms", "kind": "feature", "from": "title_raw", "as": "features", "max": 3},
     {"op": "default", "field": "item_type", "from_category": True},
     {"op": "default", "field": "canonical_category_id", "from_category": True, "attr": "id"},
     {"op": "flag", "from": "title_raw", "pattern": "充电|电池|USB|无线|蓝牙|插电|LED|电动", "name": "maybe_electronics"},
     {"op": "flag", "from": "title_raw", "pattern": "儿童|婴儿|宝宝|幼儿|キッズ|ベビー", "name": "maybe_kids"},
-    {"op": "flag", "from": "title_raw", "pattern": "食品|零食|饮料|咖啡豆|茶叶|保健", "name": "maybe_food"},
+    {"op": "flag", "from": "title_raw", "pattern": "零食|食品|茶叶|咖啡豆|保健品|坚果|糖果", "name": "maybe_food"},
+    # 검색어: 카테고리 키워드 + (용량 | 특징어 | 재질). 비는 자리가 있으면 그 템플릿은 건너뛴다
     {"op": "template", "text": "{kw0} {capacity}", "as": "q1"},
-    {"op": "template", "text": "{kw1} {material_ko}", "as": "q2"},
-    {"op": "template", "text": "{kw0}", "as": "q3"},
+    {"op": "template", "text": "{kw0} {features0}", "as": "q2"},
+    {"op": "template", "text": "{kw1} {material_ko}", "as": "q3"},
+    {"op": "template", "text": "{kw0} {features1}", "as": "q4"},
+    {"op": "template", "text": "{kw0}", "as": "q5"},
 ]
 
-MATERIAL_KO = {"stainless": "스테인리스", "glass": "유리", "ceramic": "도자기", "silicone": "실리콘", "plastic": "플라스틱",
-               "wood": "원목", "metal": "메탈", "fabric": "패브릭", "paper": "종이", "battery": "배터리", "magnet": "자석", "liquid": "액체"}
-
-FIELDS_FOR_COVERAGE = ["title_clean", "numbers", "material_code", "item_type", "canonical_category_id", "search_queries"]
+FIELDS_FOR_COVERAGE = ["title_clean", "numbers", "material_code", "features", "item_type", "canonical_category_id", "search_queries"]
 
 
 @dataclass
@@ -47,6 +50,7 @@ class NormalizedItem:
     requirement_status: str
     requirement_reason: str
     flags: list[str]
+    features: list[str] = field(default_factory=list)   # 제목에서 찾은 특징어 코드 (吸管 → straw …)
     missing: list[dict] = field(default_factory=list)   # 사전에 없는 표기 → mapping_queue
     dict_version: int = 0
     ruleset_version: int | None = None
@@ -73,12 +77,6 @@ def normalize(raw: dict[str, Any], category: Category | None, d: Dictionary, *, 
     ctx = build_ctx(raw, category, d, extra_keywords)
     res = engine.run(rules or DEFAULT_RULES, ctx, d)
     c = res.ctx
-
-    # 재질 한국어 (템플릿 재료) — map 결과가 있을 때만. 템플릿은 이미 돌았으니 q2 를 다시 만든다
-    if c.get("material_code"):
-        c["material_ko"] = MATERIAL_KO.get(c["material_code"], "")
-        if c.get("kw1") and c["material_ko"]:
-            c["q2"] = f"{c['kw1']} {c['material_ko']}"
 
     # 카테고리 표기(빵부스러기)가 사전과 다르면 사전을 우선하되 상속값과 다르면 큐에
     cat_id = c.get("canonical_category_id")
@@ -111,7 +109,7 @@ def normalize(raw: dict[str, Any], category: Category | None, d: Dictionary, *, 
     elif brand_hit:
         excluded = "brand_text"
 
-    queries = [c[k] for k in ("q1", "q2", "q3") if c.get(k)]
+    queries = [c[k] for k in ("q1", "q2", "q3", "q4", "q5") if c.get(k)]
     dedup: list[str] = []
     for q in queries:
         if q not in dedup:
@@ -129,6 +127,7 @@ def normalize(raw: dict[str, Any], category: Category | None, d: Dictionary, *, 
         requirement_status=status,
         requirement_reason=reason,
         flags=sorted(flags),
+        features=list(c.get("features") or []),
         missing=list(c.get("missing") or []),
         dict_version=d.dict_version,
         ruleset_version=ruleset_version,
@@ -142,7 +141,7 @@ def to_row(source_item_id: int, n: NormalizedItem) -> dict:
         "dict_version": n.dict_version,
         "ruleset_version": n.ruleset_version,
         "title_clean": n.title_clean,
-        "key_numbers_json": n.key_numbers,
+        "key_numbers_json": {**n.key_numbers, **({"features": n.features} if n.features else {})},
         "material_code": n.material_code,
         "item_type": n.item_type,
         "canonical_category_id": n.canonical_category_id,

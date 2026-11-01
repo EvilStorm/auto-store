@@ -38,6 +38,19 @@ def test_pick_title_skips_company_and_price_lines():
     assert s1688.is_company_name("繁昌区呗呗叮叮商行") and not s1688.is_company_name("保温杯 500ml 厂家直销款")
 
 
+def test_real_search_card_layout():
+    # 2026-11-01 실제 1688 검색 카드 텍스트: 상품명은 공백 없는 첫 토큰, 가격은 "¥ 5 .9", 판매량은 "全网4.8万+件"
+    text = "家用316不锈钢水杯女高颜值浮球保温杯学生提绳吸管杯大容量杯子 下单返拿样费 ｜ 商机组货：茶杯保温杯 ¥ 5 .9 红包价 全网4.8万+件 包邮 退货包运费 先采后付 回头率54% 永康市舒响工贸有限公司"
+    li = s1688.card_to_listing({"id": "953468495242", "href": "https://detail.1688.com/offer/953468495242.html", "text": text, "img": "",
+                                "titles": [text, "永康市舒响工贸有限公司", "点此可以直接和卖家交流选好的宝贝，或相互交流网购体验，还支持语音视频噢。", "商机组货：茶杯保温杯", "全网4.8万+件"]})
+    assert li.title_raw == "家用316不锈钢水杯女高颜值浮球保温杯学生提绳吸管杯大容量杯子"
+    assert li.price_tiers == [{"min_qty": 1, "unit_price": 5.9}] and li.price_raw == "¥ 5 .9"
+    assert li.extra["company"] == "永康市舒响工贸有限公司" and li.extra["sales"] == 48000 and li.extra["tags"] == ["茶杯保温杯"]
+    assert li.extra["price_label"] == "红包价" and li.extra["free_shipping"] is True and li.extra["repeat_rate"] == 54.0
+    assert s1688.parse_price("¥ 0 .68 红包价")[1][0]["unit_price"] == 0.68
+    assert s1688.parse_sales("800+件 包邮") == 800 and s1688.parse_sales("10万+件") == 100000 and s1688.parse_sales("全网1.6万+件") == 16000
+
+
 def test_card_without_price_is_skipped():
     assert s1688.card_to_listing({"id": "1", "href": "h", "text": "no price here", "img": "", "title": ""}) is None
 

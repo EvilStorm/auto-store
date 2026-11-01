@@ -30,6 +30,7 @@ class Dictionary:
     categories: dict[str, Category] = field(default_factory=dict)
     category_aliases: dict[tuple[str, str], str] = field(default_factory=dict)  # (term_lower, lang) → category id
     attribute_aliases: dict[tuple[str, str], str] = field(default_factory=dict)  # (kind, term_lower) → code
+    code_ko: dict[tuple[str, str], str] = field(default_factory=dict)  # (kind, code) → 한국어 표기
     brand_blacklist: dict[str, str] = field(default_factory=dict)  # name_lower → kind
     stopwords: set[str] = field(default_factory=set)
     requirements: dict[str, tuple[str, str]] = field(default_factory=dict)  # item_type → (status, reason)
@@ -55,6 +56,33 @@ class Dictionary:
             if k == kind and alias in t and (best is None or len(alias) > len(best[0])):
                 best = (alias, code)
         return best[1] if best else None
+
+    def terms_for(self, kind: str, text: str, max_terms: int = 5) -> list[str]:
+        """텍스트 안에서 kind 사전의 표기를 전부 찾아 코드 목록으로 (등장 순서 · 겹치지 않게 · 긴 표기 우선). 특징어 추출용."""
+        t = (text or "").lower()
+        hits: list[tuple[int, int, str]] = []
+        for (k, alias), code in sorted(self.attribute_aliases.items(), key=lambda kv: -len(kv[0][1])):
+            if k != kind or len(alias) < 2:
+                continue
+            start = 0
+            while True:
+                i = t.find(alias, start)
+                if i < 0:
+                    break
+                if not any(i < e and i + len(alias) > s for s, e, _ in hits):
+                    hits.append((i, i + len(alias), code))
+                start = i + len(alias)
+        out: list[str] = []
+        for _, _, code in sorted(hits):
+            if code not in out:
+                out.append(code)
+        return out[:max_terms]
+
+    def ko_for(self, kind: str, code: str | None) -> str:
+        """코드 → 한국어 표기 (ko 별칭 중 첫 것). 없으면 ''."""
+        if not code:
+            return ""
+        return self.code_ko.get((kind, code), "")
 
     def brand_hits(self, text: str) -> list[str]:
         low = (text or "").lower()
@@ -103,6 +131,8 @@ def from_seed() -> Dictionary:
         d.category_aliases[(r["term"].lower(), r["lang"])] = r["canonical_category_id"]
     for r in _read_csv("attribute_aliases.csv"):
         d.attribute_aliases[(r["kind"], r["term"].lower())] = r["code"]
+        if r["lang"] == "ko":
+            d.code_ko.setdefault((r["kind"], r["code"]), r["term"])
     for r in _read_csv("brand_blacklist.csv"):
         d.brand_blacklist[r["name"].lower()] = r["kind"]
     for r in _read_csv("title_stopwords.csv"):
@@ -124,8 +154,10 @@ def from_db(client) -> Dictionary:
         )
     for r in client.table("category_aliases").select("term, lang, canonical_category_id").execute().data:
         d.category_aliases[(r["term"].lower(), r["lang"])] = r["canonical_category_id"]
-    for r in client.table("attribute_aliases").select("kind, term, code").execute().data:
+    for r in client.table("attribute_aliases").select("kind, term, lang, code").execute().data:
         d.attribute_aliases[(r["kind"], r["term"].lower())] = r["code"]
+        if r.get("lang") == "ko":
+            d.code_ko.setdefault((r["kind"], r["code"]), r["term"])
     for r in client.table("brand_blacklist").select("name, kind").execute().data:
         d.brand_blacklist[r["name"].lower()] = r["kind"]
     for r in client.table("title_stopwords").select("term").execute().data:

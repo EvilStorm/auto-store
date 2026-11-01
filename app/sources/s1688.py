@@ -55,6 +55,8 @@ JS_DIAG = r"""() => ({url:location.href, title:document.title, offers:document.q
 
 COMPANY_RE = re.compile(r"(公司|有限公司|厂|工厂|商行|商店|专营店|旗舰店|批发部|经营部|合作社|工作室|贸易|实业|店)$")
 PRICE_RE = re.compile(r"[¥￥]\s*\d")
+# 카드 안의 툴팁 · 판촉 · 태그 문구 (상품명이 아님)
+NOISE_RE = re.compile(r"(点此|交流|语音视频|下单返拿样费|首单减|免运费|功能上新|商机组货|红包价|新人价|退货包运费|先采后付|包邮|榜第\d+名|成交|起批|回头率|已售|销量|\+件|^\d+~\d+个$)")
 
 
 def is_company_name(s: str) -> bool:
@@ -63,15 +65,29 @@ def is_company_name(s: str) -> bool:
 
 
 def pick_title(cands: list[str], text: str = "") -> tuple[str, str]:
-    """(상품명, 회사명). 회사명 패턴은 제외하고, 가격 · 판매량 문구가 아닌 가장 긴 후보를 상품명으로."""
+    """(상품명, 회사명).
+
+    1688 검색 카드 텍스트는 '<상품명> <판촉문구> ｜ 商机组货：<태그> ¥ 5 .9 红包价 全网4.8万+件 … <회사명>' 꼴이고
+    상품명은 공백 없는 첫 토큰이다. 그 토큰으로 시작하는 후보(상세 제목 등)가 있으면 그것을, 없으면 토큰 자체를 쓴다.
+    """
     company = next((c for c in cands if is_company_name(c)), "")
-    good = [c for c in cands if not is_company_name(c) and not PRICE_RE.search(c) and not re.search(r"(成交|起批|回头率|已售|销量)", c)]
+    clean = " ".join((text or "").split())
+    first = clean.split(" ")[0] if clean else ""
+    if len(first) >= 8 and not is_company_name(first) and not PRICE_RE.search(first) and not NOISE_RE.search(first):
+        longer = [c for c in cands if c.startswith(first) and len(c) <= 120 and not PRICE_RE.search(c) and not NOISE_RE.search(c)]
+        return (max(longer, key=len) if longer else first)[:120], company
+    good = [c for c in cands if not is_company_name(c) and not PRICE_RE.search(c) and not NOISE_RE.search(c) and len(c) <= 120]
     if good:
         return max(good, key=len)[:120], company
-    # 후보가 없으면 카드 텍스트에서 가격 앞부분
-    head = re.split(r"[¥￥]", text, 1)[0].strip()
-    head = re.sub(r"\s*(成交|起批|回头率).*$", "", head)
+    head = re.split(r"[¥￥]", clean, 1)[0].strip()
+    head = re.split(r"[｜|]", head, 1)[0].strip()
+    head = NOISE_RE.split(head)[0].strip()
     return (head[:120] if head and not is_company_name(head) else ""), company
+
+
+def parse_tags(text: str) -> list[str]:
+    """'商机组货：茶杯保温杯' 같은 카테고리 힌트 태그."""
+    return [m.strip() for m in re.findall(r"商机组货[:：]\s*([^¥￥｜|]{2,30}?)(?=\s[¥￥]|\s*$|\s{2})", text)]
 
 JS_DETAIL = r"""() => {
   const attrs={};
@@ -92,18 +108,26 @@ def _num(s: str) -> float:
     return float(s.replace(",", ""))
 
 
+# 검색 카드의 가격은 "¥ 5 .9" 처럼 정수부와 소수부 사이에 공백이 들어간다 (DOM 이 둘을 다른 span 에 그림)
+_PRICE_NUM = r"(\d{1,3}(?:,\d{3})+|\d+)(?:\s*\.\s*(\d+))?"
+
+
+def _join_num(whole: str, frac: str | None) -> float:
+    return float(whole.replace(",", "") + ("." + frac if frac else ""))
+
+
 def parse_price(text: str) -> tuple[str, list[dict]]:
-    """'¥12.50-15.00' · '¥ 12.5 起' · '¥12.5 2件起批' 등에서 (원문, tiers). 구간은 최저가를 1구간 단가로."""
-    m = re.search(r"[¥￥]\s*([\d,]+(?:\.\d+)?)(?:\s*[-~～]\s*[¥￥]?\s*([\d,]+(?:\.\d+)?))?", text)
+    """'¥12.50-15.00' · '¥ 5 .9' · '¥12.5 2件起批' 등에서 (원문, tiers). 구간은 최저가를 1구간 단가로."""
+    m = re.search(r"[¥￥]\s*" + _PRICE_NUM + r"(?:\s*[-~～]\s*[¥￥]?\s*" + _PRICE_NUM + r")?", text)
     if not m:
         return "", []
-    raw = m.group(0).strip()
-    low = _num(m.group(1))
+    raw = " ".join(m.group(0).split())
+    low = _join_num(m.group(1), m.group(2))
     tiers = [{"min_qty": 1, "unit_price": low}]
     # "≥2件 ¥12.5 ≥10件 ¥11.8" 식 다단가
-    multi = re.findall(r"[≥>]\s*(\d+)\s*[件个套双条盒包]\s*[¥￥]\s*([\d,]+(?:\.\d+)?)", text)
+    multi = re.findall(r"[≥>]\s*(\d+)\s*[件个套双条盒包]\s*[¥￥]\s*" + _PRICE_NUM, text)
     if multi:
-        tiers = [{"min_qty": int(q), "unit_price": _num(p)} for q, p in multi]
+        tiers = [{"min_qty": int(q), "unit_price": _join_num(w, f)} for q, w, f in multi]
     return raw, tiers
 
 
@@ -113,11 +137,11 @@ def parse_moq(text: str) -> int:
 
 
 def parse_sales(text: str) -> int | None:
-    m = re.search(r"(?:成交|已售|销量)\s*([\d.]+)\s*(万)?", text)
+    """'成交300件' · '全网4.8万+件' · '800+件' · '10万+件' → 정수."""
+    m = re.search(r"(?:成交|已售|销量|全网)\s*([\d.]+)\s*(万)?\s*\+?\s*件", text) or re.search(r"(?<![\d.])([\d.]+)\s*(万)?\s*\+\s*件", text)
     if not m:
         return None
-    v = float(m.group(1)) * (10000 if m.group(2) else 1)
-    return int(v)
+    return int(float(m.group(1)) * (10000 if m.group(2) else 1))
 
 
 def card_to_listing(c: dict) -> RawListing | None:
@@ -138,6 +162,14 @@ def card_to_listing(c: dict) -> RawListing | None:
     sales = parse_sales(t)
     if sales is not None:
         ext["sales"] = sales
+    tags = parse_tags(t)
+    if tags:
+        ext["tags"] = tags
+    mp = re.search(r"(红包价|新人价|拿样价|批发价)", t)
+    if mp:
+        ext["price_label"] = mp.group(1)
+    if "包邮" in t:
+        ext["free_shipping"] = True
     m = re.search(r"回头率\s*([\d.]+)%", t)
     if m:
         ext["repeat_rate"] = float(m.group(1))
