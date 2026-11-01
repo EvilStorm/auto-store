@@ -177,6 +177,10 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 - 환율 어댑터가 공용 `exchange_rates` 를 먼저 보고 신선한 행이 없을 때만 외부 수집
 - 테스트 38개. **텔레그램 실발송·DB 흐름은 Supabase 적용 + 봇 토큰 뒤 검증.**
 
+## 8-0-4. 구현 6단계 (2026-11-01): 관리자 웹
+
+`app/admin/` FastAPI + Jinja2(`templates/admin/`) + HTMX + Pico.css, `python -m app.admin` → 127.0.0.1:8000. 로그인은 CLI 세션 파일 공유(쿠키 세션 없음, 로컬 1인). 모든 조회·변경은 anon 키 + 계정 JWT 라 RLS 가 그대로 적용. 메뉴 8개(대시보드 · 후보 목록/상세 · 관심 카테고리 · 내 소스 · 설정/시크릿 · 사전 관리(admin) · 실행 로그 · 즉시 분석 큐). 대시보드의 배치 버튼은 `app.worker run --stage` 를 서브프로세스로 띄우고 로그 꼬리를 3초마다 갱신(HTMX). 승인/거절/보류는 텔레그램과 같은 `telegram_poll.decide()`. 주문 관리는 2차.
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

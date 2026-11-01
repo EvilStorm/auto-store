@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}후보 목록{% endblock %}
+{% block body %}
+<h2>후보 목록</h2>
+<form method="get" action="/candidates" style="display:flex;gap:.6rem;align-items:end">
+  <label>상태 <select name="status"><option value="">전체</option>{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s }}</option>{% endfor %}</select></label>
+  <label>날짜 <input type="date" name="date" value="{{ day }}"></label>
+  <button>조회</button>
+</form>
+<table>
+  <thead><tr><th></th><th>상품</th><th>상태</th><th>마진</th><th>점수</th><th>국내가</th><th>제안가</th><th>플래그</th><th>날짜</th><th></th></tr></thead>
+  <tbody>{% for r in rows %}{% set it = items.get(r.source_item_id, {}) %}{% set nm = norms.get(r.source_item_id, {}) %}
+  <tr>
+    <td>{% if it.main_image_url %}<img class="thumb" src="{{ it.main_image_url }}" loading="lazy">{% endif %}</td>
+    <td><a href="/candidates/{{ r.id }}">{{ nm.title_clean or it.title_raw or r.source_item_id }}</a><br><small>#{{ r.source_item_id }} · {{ it.source_id }} · {{ (nm.search_queries or [])|join(' / ') }}</small></td>
+    <td><span class="tag {{ 'ok' if r.status in ('approved_1','approved_2','listed') else 'bad' if r.status.startswith('rejected') else '' }}">{{ r.status }}</span></td>
+    <td>{{ r.margin_rate|pct }}</td><td>{{ r.score if r.score is not none else '-' }}</td>
+    <td>{{ r.domestic_price_krw|won }}</td><td>{{ r.suggested_price_krw|won }}</td>
+    <td>{% for f in r.flags %}<span class="tag warn">{{ f }}</span>{% endfor %}</td>
+    <td><small>{{ r.run_date }}</small></td>
+    <td class="row-actions">{% if r.status in ('candidate', 'held', 'below_margin') %}
+      <form method="post" action="/candidates/{{ r.id }}/approve" class="inline"><button>승인</button></form>
+      <form method="post" action="/candidates/{{ r.id }}/reject" class="inline"><button class="secondary">거절</button></form>
+      <form method="post" action="/candidates/{{ r.id }}/hold" class="inline"><button class="outline">보류</button></form>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+{% if not rows %}<p>후보가 없습니다. 대시보드에서 수집 → 조회 → 점수를 실행하세요.</p>{% endif %}
+{% endblock %}

@@ -20,13 +20,10 @@ ACTIONS = {"approve": ("approved_1", "approve", "승인 → 상세 수집 대기
 URL_RE = re.compile(r"https?://\S+")
 
 
-def handle_callback(c, user_id: str, cb: dict, bot) -> str:
-    parsed = parse_callback(cb.get("data", ""))
-    if not parsed:
-        return "알 수 없는 버튼"
-    kind, cid, action = parsed
-    if kind != "c" or action not in ACTIONS:
-        return "알 수 없는 버튼"
+def decide(c, user_id: str, cid: int, action: str) -> str:
+    """[승인][거절][보류] 를 candidates 에 반영 (텔레그램 · 관리자 웹 공용). 반환: 사람용 라벨."""
+    if action not in ACTIONS:
+        return "알 수 없는 동작"
     status, decision, label = ACTIONS[action]
     now = datetime.now(timezone.utc).isoformat()
     rows = c.table("candidates").select("id, status, source_item_id").eq("id", cid).limit(1).execute().data
@@ -37,6 +34,17 @@ def handle_callback(c, user_id: str, cb: dict, bot) -> str:
         it = c.table("source_items").select("source_id, source_item_id").eq("id", rows[0]["source_item_id"]).limit(1).execute().data
         if it:
             c.table("rejections").insert({"user_id": user_id, "source_id": it[0]["source_id"], "source_item_id": it[0]["source_item_id"], "reason": "quality"}).execute()
+    return label
+
+
+def handle_callback(c, user_id: str, cb: dict, bot) -> str:
+    parsed = parse_callback(cb.get("data", ""))
+    if not parsed:
+        return "알 수 없는 버튼"
+    kind, cid, action = parsed
+    if kind != "c" or action not in ACTIONS:
+        return "알 수 없는 버튼"
+    label = decide(c, user_id, cid, action)
     msg = cb.get("message") or {}
     if msg.get("message_id"):
         bot.edit_buttons(msg["message_id"], [[(f"✓ {label}", f"c:{cid}:done")]])

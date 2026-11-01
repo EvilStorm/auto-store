@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}후보 #{{ cand.id }}{% endblock %}
+{% block body %}
+<h2>후보 #{{ cand.id }} <span class="tag">{{ cand.status }}</span> <small style="font-weight:400"><a href="/candidates">← 목록</a></small></h2>
+<div class="grid2">
+  <article>
+    {% if item.main_image_url %}<img src="{{ item.main_image_url }}" style="max-width:100%;max-height:320px;object-fit:contain">{% endif %}
+    <p><strong>{{ norm.title_clean or item.title_raw }}</strong><br><small>{{ item.title_raw }}</small><br><a href="{{ item.url }}" target="_blank">{{ item.url }}</a></p>
+    <p>재질 {{ norm.material_code or '-' }} · 품목 {{ norm.item_type }} · 카테고리 {{ norm.canonical_category_id }} · 검색어 {{ (norm.search_queries or [])|join(' / ') }}</p>
+    {% if logo %}<p>로고 확인: {{ '감지 — ' ~ logo.logo_reason if logo.logo_detected else ('없음' if logo.logo_checked_at else '미확인') }}</p>{% endif %}
+    <div class="row-actions">
+      <form method="post" action="/candidates/{{ cand.id }}/approve" class="inline"><button>승인 (상세 수집 대기)</button></form>
+      <form method="post" action="/candidates/{{ cand.id }}/reject" class="inline"><button class="secondary">거절 (90일 제외)</button></form>
+      <form method="post" action="/candidates/{{ cand.id }}/hold" class="inline"><button class="outline">보류</button></form>
+    </div>
+  </article>
+  <article>
+    <header><strong>카드 (텔레그램과 동일)</strong></header>
+    <pre class="card">{{ card }}</pre>
+    <small>점수 분해 {{ cand.score_parts_json }} · 플래그 {% for f in cand.flags %}<span class="tag warn" title="{{ flag_ko.get(f, f) }}">{{ flag_ko.get(f, f) }}</span>{% endfor %}</small>
+  </article>
+</div>
+<article>
+  <header><strong>매칭 {{ matches|length }}건</strong> <small>정확 {{ sig.exact_count or 0 }} · 유사 {{ sig.similar_count or 0 }} · 수집 {{ sig.total_results or 0 }} · 동일 사진 판매자 {{ sig.same_image_sellers if sig.same_image_sellers is not none else '-' }} · 가격 평균 {{ sig.price_mean|won }} / 중앙 {{ sig.price_median|won }} / 최저 {{ sig.price_min|won }}</small></header>
+  <table>
+    <thead><tr><th></th><th>네이버 상품</th><th>가격</th><th>리뷰</th><th>판매처</th><th>판정</th><th>방법</th><th>유사도</th><th>근거</th></tr></thead>
+    <tbody>{% for m in matches %}
+    <tr>
+      <td>{% if m.image_url %}<img class="thumb" src="{{ m.image_url }}" loading="lazy">{% endif %}</td>
+      <td><a href="{{ m.link }}" target="_blank">{{ m.title }}</a><br><small>{{ m.mall or '' }}</small></td>
+      <td>{{ m.price|won }}</td><td>{{ m.review_count or '-' }}</td><td>{{ m.seller_count or '-' }}</td>
+      <td><span class="tag {{ 'ok' if m.relation == 'exact' else '' }}">{{ m.relation }}</span></td><td>{{ m.method }}</td><td>{{ m.similarity or '-' }}</td><td><small>{{ m.reason }}</small></td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</article>
+<article>
+  <header><strong>원가 내역</strong></header>
+  <table>{% for k, v in cand.cost_breakdown_json.items() %}<tr><td>{{ k }}</td><td style="text-align:right">{{ v }}</td></tr>{% endfor %}</table>
+</article>
+{% endblock %}

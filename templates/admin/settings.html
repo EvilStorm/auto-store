@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}설정{% endblock %}
+{% block body %}
+<h2>설정 <small style="font-weight:400;color:#666">계정별 · DB 가 진실 · PC 를 바꿔도 같음 · 다음 실행부터 적용</small></h2>
+<form method="post" action="/settings">
+  {% for group, fields in fields.items() %}
+  <article>
+    <header><strong>{{ group }}</strong></header>
+    <div class="grid">{% for key, label in fields %}
+      <label>{{ label }} <input name="{{ key }}" value="{{ us.get(key, '') if us.get(key) is not none else '' }}"></label>
+    {% endfor %}</div>
+  </article>
+  {% endfor %}
+  <button>저장</button>
+</form>
+<article>
+  <header><strong>시크릿</strong> <small>계정 소유 행(RLS) · 비우고 저장하면 삭제 → .env 값으로 복귀</small></header>
+  {% for n in secret_names %}
+  <form method="post" action="/secrets" class="grid">
+    <input type="hidden" name="name" value="{{ n }}">
+    <label>{{ n }} <small>{{ masked.get(n, '(없음 · .env 사용)') }}</small><input type="password" name="value" placeholder="새 값"></label>
+    <button class="secondary" style="align-self:end">저장</button>
+  </form>
+  {% endfor %}
+  <form method="post" action="/secrets" class="grid">
+    <input type="hidden" name="name" value="telegram_chat_id">
+    <label>telegram_chat_id <input name="telegram_chat_id" value="{{ chat_id }}"></label>
+    <button class="secondary" style="align-self:end">저장</button>
+  </form>
+</article>
+{% endblock %}

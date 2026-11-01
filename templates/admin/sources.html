@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}내 소스{% endblock %}
+{% block body %}
+<h2>내 소스 <small style="font-weight:400;color:#666">소스 정의는 공용, 켜기 · 요청 정책 · 배송 프로필은 개인</small></h2>
+{% for d in defs %}{% set m = mine.get(d.id, {}) %}
+<article>
+  <header><strong>{{ d.name }}</strong> <span class="tag">{{ d.adapter_key }}</span> <span class="tag">{{ d.country }} · {{ d.currency }}</span> <small>{{ d.base_url }}</small>
+    {% if d.auth_mode == 'browser_profile' %}<small> · 로그인 프로필 필요: <code>python -m app.sources.{{ 's1688' if d.id == '1688' else d.id }} --profile {{ m.browser_profile_name or d.id }} --headed --login</code></small>{% endif %}</header>
+  <form method="post" action="/sources/{{ d.id }}">
+    <div class="grid">
+      <label><input type="checkbox" name="enabled" {{ 'checked' if m.get('enabled', False) else '' }}> 사용</label>
+      <label>프로필 이름 <input name="browser_profile_name" value="{{ m.browser_profile_name or d.id }}"></label>
+      <label>배송 프로필 <select name="shipping_profile_id"><option value="">(없음 → 기본값)</option>{% for p in profiles %}<option value="{{ p.id }}" {{ 'selected' if m.shipping_profile_id == p.id else '' }}>{{ p.name }} ({{ p.currency }})</option>{% endfor %}</select></label>
+    </div>
+    <div class="grid">
+      <label>지연 최소(초) <input type="number" step="0.5" name="delay_min_s" value="{{ m.delay_min_s or 2 }}"></label>
+      <label>지연 최대(초) <input type="number" step="0.5" name="delay_max_s" value="{{ m.delay_max_s or 6 }}"></label>
+      <label>하루 요청 상한 <input type="number" name="daily_cap" value="{{ m.daily_cap or 300 }}"></label>
+      <label>연속 차단 허용 <input type="number" name="block_tolerance" value="{{ m.block_tolerance or 3 }}"></label>
+    </div>
+    <button>저장</button>
+    <small> 헬스: 마지막 성공 {{ (m.last_ok_at or '-')|ts }} · 연속 실패 {{ m.consecutive_failures or 0 }}</small>
+  </form>
+</article>
+{% endfor %}
+{% endblock %}

@@ -324,6 +324,12 @@ insert into user_watch_categories (user_id, source_category_id, max_pages) value
 insert into user_sources (user_id, source_id, browser_profile_name) values (auth.uid(), '1688', '1688');
 ```
 
+### 5-4-3. 관리자 웹 (6단계)
+```powershell
+.venv\Scripts\python -m app.admin            # http://127.0.0.1:8000 (로컬 전용)
+```
+로그인은 CLI 와 같은 세션 파일(`~\.auto-store\session.dev.json`)을 쓰므로 `app.auth login` 을 했으면 바로 대시보드가 뜬다(안 했으면 로그인 화면). 메뉴: 대시보드(배치 실행 버튼 · 로그 꼬리 · 공용 데이터 · 비용) · 후보 목록/상세(승인 · 거절 · 보류, 매칭 썸네일, 카드) · 관심 카테고리 · 내 소스 · 설정(계정별, 시크릿) · 사전 관리(확인 큐 · 규칙 세트, admin) · 실행 로그 · 즉시 분석(큐). 배치 버튼은 이 PC 에서 `app.worker run --stage …` 를 백그라운드로 띄운다. 맥은 `.venv/bin/python -m app.admin`.
+
 ### 5-5. 끝나면
 - `.env.dev` 에서 `SUPABASE_DB_URL` 과 `SUPABASE_SERVICE_KEY` 를 지워도 된다. 일상 실행(워커 · CLI · 관리자 웹)은 anon 키 + 로그인 세션만 쓴다.
 - 시드를 고쳤으면 `scripts/seed.py` 를 다시 돌린다(upsert · dict_version +1). 마이그레이션을 추가하면 `008_*.sql` 로 번호를 이어 `migrate.py`.

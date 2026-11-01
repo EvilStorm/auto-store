@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}로그인{% endblock %}
+{% block body %}
+<h2>로그인</h2>
+<p>Supabase 계정으로 로그인합니다. 세션은 이 PC 의 <code>~/.auto-store/session.{{ env }}.json</code> 에 저장되어 CLI · 워커와 공유됩니다.</p>
+{% if error %}<div class="flash">{{ error }}</div>{% endif %}
+<form method="post" action="/login" style="max-width:420px">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>이메일 <input type="email" name="email" required autofocus></label>
+  <label>비밀번호 <input type="password" name="password" required></label>
+  <button type="submit">로그인</button>
+</form>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}실행 로그{% endblock %}
+{% block body %}
+<h2>실행 로그</h2>
+<table>
+  <thead><tr><th>날짜</th><th>단계</th><th>소스</th><th>PC</th><th>시작</th><th>종료</th><th>건수</th><th>오류</th></tr></thead>
+  <tbody>{% for l in rows %}
+  <tr><td>{{ l.run_date }}</td><td>{{ l.kind }}</td><td>{{ l.source_id or '' }}</td><td>{{ l.pc_name or '' }}</td><td>{{ l.started_at|ts }}</td><td>{{ l.finished_at|ts }}</td>
+    <td><small>{{ l.counts_json }}</small></td><td><small style="color:#C53030">{{ l.error or '' }}</small></td></tr>
+  {% endfor %}</tbody>
+</table>
+{% endblock %}

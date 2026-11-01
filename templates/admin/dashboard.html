@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}대시보드{% endblock %}
+{% block body %}
+<h2>대시보드 <small style="font-weight:400;color:#666">{{ today }} · PC {{ pc }}</small></h2>
+<div class="kpi">
+  <article><div class="v">{{ counts.by.get('candidate', 0) }}</div><div class="l">오늘 후보 (미전송 포함)</div></article>
+  <article><div class="v">{{ counts.by.get('approved_1', 0) }}</div><div class="l">1차 승인</div></article>
+  <article><div class="v">{{ counts.by.get('held', 0) }}</div><div class="l">보류</div></article>
+  <article><div class="v">{{ counts.by.get('below_margin', 0) }}</div><div class="l">마진 미달 · 비교가 없음</div></article>
+  <article><div class="v">{{ counts.pending }}</div><div class="l">확인 대기 표기</div></article>
+  <article><div class="v">{{ '{:,.0f}'.format(counts.cost) }}원</div><div class="l">이번 달 LLM 비용 (추정)</div></article>
+</div>
+<div class="grid2">
+  <article>
+    <header><strong>배치 실행</strong> <small>(이 PC 에서 백그라운드로 · --no-lock)</small></header>
+    <form method="post" action="/run/collect" class="inline"><button>① ② 수집 · 정규화</button></form>
+    <form method="post" action="/run/lookup" class="inline"><button class="secondary">③ 국내 조회 · 매칭</button></form>
+    <form method="post" action="/run/score" class="inline"><button class="secondary">④ 점수</button></form>
+    <form method="post" action="/run/notify" class="inline"><button class="contrast">⑤ 텔레그램 카드</button></form>
+    <p style="margin-top:.6rem"><small>잠금: {{ counts.locks or '없음' }} · 환율: {% for r in counts.rates %}{{ r.currency }} {{ '%.1f'|format(r.rate_krw) }} {% endfor %}</small></p>
+    {% for j in jobs %}
+      <details {{ 'open' if j.running else '' }}>
+        <summary>{{ j.stage }} · {{ '실행 중' if j.running else '종료 ' ~ j.rc }} · {{ j.started }}</summary>
+        <pre class="card" hx-get="/jobs/{{ j.stage }}/log" hx-trigger="{{ 'every 3s' if j.running else 'load' }}" hx-swap="innerHTML">로딩…</pre>
+      </details>
+    {% endfor %}
+  </article>
+  <article>
+    <header><strong>공용 데이터</strong> <small>(모든 계정이 공유)</small></header>
+    <table>
+      {% for k, v in counts.shared.items() %}<tr><td>{{ k }}</td><td style="text-align:right">{{ '{:,}'.format(v) }}</td></tr>{% endfor %}
+    </table>
+  </article>
+</div>
+<article>
+  <header><strong>최근 실행 로그</strong></header>
+  <table>
+    <thead><tr><th>단계</th><th>시작</th><th>PC</th><th>건수</th><th>오류</th></tr></thead>
+    <tbody>{% for l in logs %}
+      <tr><td>{{ l.kind }}</td><td>{{ l.started_at|ts }}</td><td>{{ l.pc_name or '' }}</td><td><small>{{ l.counts_json }}</small></td><td><small>{{ l.error or '' }}</small></td></tr>
+    {% endfor %}</tbody>
+  </table>
+</article>
+{% endblock %}
