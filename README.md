@@ -181,6 +181,11 @@ Python 3.12 · **Supabase (Postgres + pgvector + Auth + Storage + Vault, supabas
 
 `app/admin/` FastAPI + Jinja2(`templates/admin/`) + HTMX + Pico.css, `python -m app.admin` → 127.0.0.1:8000. 로그인은 CLI 세션 파일 공유(쿠키 세션 없음, 로컬 1인). 모든 조회·변경은 anon 키 + 계정 JWT 라 RLS 가 그대로 적용. 메뉴 8개(대시보드 · 후보 목록/상세 · 관심 카테고리 · 내 소스 · 설정/시크릿 · 사전 관리(admin) · 실행 로그 · 즉시 분석 큐). 대시보드의 배치 버튼은 `app.worker run --stage` 를 서브프로세스로 띄우고 로그 꼬리를 3초마다 갱신(HTMX). 승인/거절/보류는 텔레그램과 같은 `telegram_poll.decide()`. 주문 관리는 2차.
 
+## 8-0-5. 구현 7단계 (2026-11-01): URL 즉시 분석 v3 전환
+
+`app/instant.py` 재작성 — 이력은 Supabase `analysis_requests`, 결과는 일반 후보와 같은 `candidates`(origin=instant). **등록 소스**(1688)는 어댑터 `detail()` → 공용 `source_items`·`source_item_details`(옵션·무게·이미지) → ② 사전 정규화(빵부스러기가 없으면 제목 별칭으로 카테고리) → ③ 국내 조회 → ④ 점수 → 카드, **AI 0회**. **미등록 사이트**는 범용 스냅샷 → `page_extracts`(URL+텍스트 해시) 캐시 또는 LLM 추출 → LLM 정규화 → 소스 자동 등록(host) → 같은 후단. 입구 3개: CLI(`python -m app.instant <URL>`), 텔레그램(URL 보내면 폴러가 바로 분석해 카드로 응답), 관리자 웹(큐 + "지금 처리"). `--queue --telegram` 으로 큐 처리.
+1688 상세 어댑터는 페이지 **내장 JSON**(`currentPrices`·`skuInfoMap`·`pieceWeightScaleInfo`·`mainImageList`·`offerTitle`)을 우선 읽고 텍스트·DOM 은 폴백(쿠폰가 `券后¥0.90起` 는 건너뜀). 실측: 즉시 분석 1건 ≈ 1분, LLM 0회, 무게·옵션 10개·이미지 5장 확보. 테스트 46개.
+
 ## 8-1. 지금 돌아가는 것: URL 즉시 분석 CLI (v2 경로, 2026-10-30)
 
 v3의 "미등록 사이트 범용 경로"에 해당한다. 윈도우·맥별 설치와 테스트 순서는 [SETUP.md](SETUP.md). 상품 URL 하나를 넣으면 페이지를 읽고(Playwright), LLM이 정보를 뽑아 한국어로 정규화·요건·브랜드 판정을 하고, 네이버 통합검색 크롤링으로 비교가를 찾아 원가·마진율·후보 점수를 계산해 카드로 출력한다. 결과는 아직 로컬 `data/analyses/`에 남는다(v3 7단계에서 Supabase `analysis_requests`로 전환).

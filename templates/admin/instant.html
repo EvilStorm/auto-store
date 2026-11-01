@@ -1,15 +1,18 @@
 {% extends "base.html" %}{% block title %}즉시 분석{% endblock %}
 {% block body %}
-<h2>URL 즉시 분석 <small style="font-weight:400;color:#666">큐에 넣기 · 처리기는 7단계 (등록 소스는 AI 0회, 미등록 사이트는 범용 LLM)</small></h2>
+<h2>URL 즉시 분석 <small style="font-weight:400;color:#666">등록 소스(1688)는 AI 0회 · 미등록 사이트는 범용 LLM 추출(캐시) · 결과는 일반 후보와 같은 행</small></h2>
 <form method="post" action="/instant">
   <label>상품 URL (한 줄에 하나) <textarea name="urls" rows="4" placeholder="https://detail.1688.com/offer/XXXXXXXX.html"></textarea></label>
   <button>큐에 추가</button>
 </form>
+<form method="post" action="/instant/process" class="inline"><button class="secondary">지금 처리 (큐 최대 5건 · 텔레그램 카드)</button></form>
+{% if jobs_instant %}<pre class="card" hx-get="/jobs/instant/log" hx-trigger="every 3s" hx-swap="innerHTML">로딩…</pre>{% endif %}
 <table>
   <thead><tr><th>요청</th><th>입구</th><th>URL</th><th>상태</th><th>결과</th><th>결정</th><th>오류</th></tr></thead>
   <tbody>{% for r in rows %}
-  <tr><td>{{ r.requested_at|ts }}</td><td>{{ r.channel }}</td><td><small>{{ r.url[:80] }}</small></td><td><span class="tag">{{ r.status }}</span></td>
-    <td><small>{{ r.summary_json }}</small></td><td>{{ r.decision }}</td><td><small>{{ r.error or '' }}</small></td></tr>
+  <tr><td>{{ r.requested_at|ts }}</td><td>{{ r.channel }}</td><td><small>{{ r.url[:80] }}</small></td><td><span class="tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'failed' else '' }}">{{ r.status }}</span></td>
+    <td><small>{% if r.summary_json %}{{ r.summary_json.get('path') }} · 마진 {{ r.summary_json.get('margin_rate')|pct }} · 점수 {{ r.summary_json.get('score') or '-' }} · {{ r.summary_json.get('status') }}{% endif %}
+      {% if r.candidate_link %} · <a href="{{ r.candidate_link }}">후보 보기</a>{% endif %}</small></td><td>{{ r.decision }}</td><td><small>{{ r.error or '' }}</small></td></tr>
   {% endfor %}</tbody>
 </table>
 {% endblock %}

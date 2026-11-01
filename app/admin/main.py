@@ -448,7 +448,11 @@ def instant(request: Request):
     if c is None:
         return need_login(request)
     rows = c.table("analysis_requests").select("*").order("requested_at", desc=True).limit(50).execute().data
-    return page(request, "instant.html", profile=prof, rows=rows)
+    for r in rows:
+        if r.get("candidate_id"):
+            r["candidate_link"] = f"/candidates/{r['candidate_id']}"
+    j = JOBS.get("instant")
+    return page(request, "instant.html", profile=prof, rows=rows, jobs_instant=bool(j and j["proc"].poll() is None))
 
 
 @app.post("/instant")
@@ -460,7 +464,26 @@ def instant_add(request: Request, urls: str = Form(...)):
     for u in [x.strip() for x in urls.splitlines() if x.strip().startswith("http")][:20]:
         c.table("analysis_requests").insert({"user_id": uid, "channel": "web", "url": u, "status": "queued"}).execute()
         n += 1
-    return RedirectResponse(f"/instant?m={n}건 큐에 추가 (처리는 7단계)", status_code=303)
+    return RedirectResponse(f"/instant?m={n}건 큐에 추가 — '지금 처리' 를 누르거나 텔레그램 폴러가 돌고 있으면 자동", status_code=303)
+
+
+@app.post("/instant/process")
+def instant_process(request: Request):
+    """큐를 서브프로세스로 처리 (대시보드 배치 버튼과 같은 방식). 텔레그램 토큰이 있으면 카드도 보낸다."""
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    j = JOBS.get("instant")
+    if j and j["proc"].poll() is None:
+        return RedirectResponse("/instant?m=이미 처리 중", status_code=303)
+    logdir = settings.data_dir / "logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+    logf = logdir / f"instant-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+    fh = logf.open("w", encoding="utf-8")
+    env = {**dict(__import__("os").environ), "PYTHONIOENCODING": "utf-8"}
+    proc = subprocess.Popen([sys.executable, "-m", "app.instant", "--queue", "--limit", "5", "--telegram"], cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, env=env)
+    JOBS["instant"] = {"proc": proc, "log": logf, "started": datetime.now().strftime("%H:%M:%S"), "fh": fh}
+    return RedirectResponse("/instant?m=처리 시작 (대시보드에서 로그 확인)", status_code=303)
 
 
 @app.get("/healthz", response_class=PlainTextResponse)

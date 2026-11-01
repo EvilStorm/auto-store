@@ -85,6 +85,122 @@ def pick_title(cands: list[str], text: str = "") -> tuple[str, str]:
     return (head[:120] if head and not is_company_name(head) else ""), company
 
 
+def _json_after(html: str, key: str, max_len: int = 400_000):
+    """html 안의 '"key":' 뒤에 오는 JSON 값(객체/배열)을 괄호 짝을 맞춰 잘라 파싱. 없거나 깨지면 None."""
+    import json as _json
+
+    i = html.find(f'"{key}":')
+    if i < 0:
+        return None
+    j = i + len(key) + 3
+    while j < len(html) and html[j] in " \t\r\n":
+        j += 1
+    if j >= len(html) or html[j] not in "[{":
+        return None
+    open_ch, close_ch = html[j], ("]" if html[j] == "[" else "}")
+    depth, k, in_str, esc = 0, j, False, False
+    while k < len(html) and k - j < max_len:
+        ch = html[k]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return _json.loads(html[j:k + 1].replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&"))
+                    except Exception:
+                        return None
+        k += 1
+    return None
+
+
+def parse_embedded(html: str) -> dict:
+    """1688 상세 페이지의 내장 JSON 에서 구조화 값을 뽑는다. 못 찾은 키는 빠진다 (DOM/텍스트 폴백이 채움)."""
+    out: dict = {}
+    m = re.search(r'"offerTitle":"((?:[^"\\]|\\.)*)"', html)
+    if m:
+        out["title"] = m.group(1).encode().decode("unicode_escape", errors="ignore") if "\\u" in m.group(1) else m.group(1)
+    for key in ("postCategoryId", "catId"):
+        m = re.search(rf'"{key}":(\d+)', html)
+        if m:
+            out["cat_id"] = m.group(1)
+            break
+    m = re.search(r'"companyName":"((?:[^"\\]|\\.)*)"', html)
+    if m:
+        out["company"] = m.group(1)
+    prices = _json_after(html, "currentPrices")
+    if isinstance(prices, list) and prices:
+        by_qty: dict[int, float] = {}
+        for p in prices:
+            try:
+                q, v = int(str(p.get("beginAmount", 1)).strip() or 1), float(str(p.get("price")).replace(",", ""))
+            except Exception:
+                continue
+            by_qty[q] = min(v, by_qty.get(q, v))
+        out["tiers"] = [{"min_qty": q, "unit_price": v} for q, v in sorted(by_qty.items())]
+    skus = _json_after(html, "skuInfoMap")
+    if isinstance(skus, dict) and skus:
+        opts = []
+        for name, s in skus.items():
+            try:
+                opts.append({"sku_id": str(s.get("skuId") or s.get("specId") or ""), "name_raw": name, "price": float(str(s.get("discountPrice") or s.get("price") or 0) or 0),
+                             "stock": int(s.get("canBookCount") or 0), "sold_out": int(s.get("canBookCount") or 0) <= 0, "sale_count": int(s.get("saleCount") or 0)})
+            except Exception:
+                continue
+        out["options"] = opts
+        if "tiers" not in out:
+            ps = [o["price"] for o in opts if o["price"] > 0]
+            if ps:
+                out["tiers"] = [{"min_qty": 1, "unit_price": min(ps)}]
+    pw = _json_after(html, "pieceWeightScaleInfo")
+    if isinstance(pw, list) and pw:
+        ws = [float(x.get("weight") or 0) for x in pw if x.get("weight")]
+        if ws:
+            out["weight_g"] = max(ws)  # 옵션 중 가장 무거운 것 (배대지 요금 보수적으로)
+        dims = [x for x in pw if x.get("length")]
+        if dims:
+            d0 = dims[0]
+            out["dims_cm"] = [float(d0.get("length") or 0), float(d0.get("width") or 0), float(d0.get("height") or 0)]
+    imgs = _json_after(html, "mainImageList")
+    if isinstance(imgs, list) and imgs:
+        out["images"] = [x.get("fullPathImageURI") for x in imgs if x.get("fullPathImageURI")]
+    return out
+
+
+def parse_attr_text(text: str) -> dict[str, str]:
+    """innerText 의 '商品属性' 구간을 '키 \\n 값' 쌍으로. 2열 표라 dt/dd 쌍이 안 맞는 DOM 파싱의 대안."""
+    i = text.find("商品属性")
+    if i < 0:
+        return {}
+    seg = text[i + 4:]
+    for stop in ("展开全部", "包装信息", "商品详情"):
+        j = seg.find(stop)
+        if j > 0:
+            seg = seg[:j]
+    lines = [ln.strip() for ln in seg.replace("\t", "\n").splitlines()]
+    lines = [ln for ln in lines if ln]
+    attrs: dict[str, str] = {}
+    k = 0
+    while k + 1 < len(lines):
+        key, val = lines[k], lines[k + 1]
+        if 1 <= len(key) <= 12 and len(val) <= 120 and key not in attrs:
+            attrs[key] = val
+            k += 2
+        else:
+            k += 1
+    return attrs
+
+
 def parse_tags(text: str) -> list[str]:
     """'商机组货：茶杯保温杯' 같은 카테고리 힌트 태그."""
     return [m.strip() for m in re.findall(r"商机组货[:：]\s*([^¥￥｜|]{2,30}?)(?=\s[¥￥]|\s*$|\s{2})", text)]
@@ -138,7 +254,7 @@ def parse_moq(text: str) -> int:
 
 def parse_sales(text: str) -> int | None:
     """'成交300件' · '全网4.8万+件' · '800+件' · '10万+件' → 정수."""
-    m = re.search(r"(?:成交|已售|销量|全网)\s*([\d.]+)\s*(万)?\s*\+?\s*件", text) or re.search(r"(?<![\d.])([\d.]+)\s*(万)?\s*\+\s*件", text)
+    m = re.search(r"(?:成交|已售|销量|全网)\s*([\d.]+)\s*(万)?\s*\+?\s*[件个套]", text) or re.search(r"(?<![\d.])([\d.]+)\s*(万)?\s*\+\s*[件个套]", text)
     if not m:
         return None
     return int(float(m.group(1)) * (10000 if m.group(2) else 1))
@@ -325,20 +441,53 @@ class Adapter1688(SourceAdapter):
             self.page.wait_for_timeout(300)
         data = self.page.evaluate(JS_DETAIL)
         text = data.get("text") or ""
-        price_raw, tiers = parse_price(text)
-        m = OFFER_RE.search(item_url)
-        attrs = data.get("attrs") or {}
-        weight = attrs.get("重量") or attrs.get("毛重") or attrs.get("净重") or ""
-        return RawDetail(
-            source_id="1688", item_id=m.group(1) if m else item_url, url=item_url,
-            title_raw=(data.get("metas") or {}).get("og:title") or (data.get("title") or "").split(" - ")[0], lang="zh",
-            price_raw=price_raw, price_tiers=tiers, currency="CNY", moq=parse_moq(text),
-            image_url=(data.get("metas") or {}).get("og:image") or (data["imgs"][0] if data.get("imgs") else ""),
-            category_raw=" > ".join(data.get("crumbs") or []), attrs_raw=attrs, weight_raw=weight,
-            sold_out=("已下架" in text or "商品不存在" in text),
-            images=list(data.get("imgs") or [])[:30], attrs_full=attrs, package_weight_raw=weight,
-            extra={"sales": parse_sales(text)} if parse_sales(text) is not None else {},
-        )
+        emb = parse_embedded(self.page.content())
+        return build_detail(item_url, text, data, emb)
+
+
+def build_detail(item_url: str, text: str, data: dict, emb: dict) -> RawDetail:
+    """상세 페이지의 내장 JSON(emb) 을 우선, 없으면 innerText · DOM 으로 RawDetail 을 만든다. 순수 함수 — 저장한 HTML 로 테스트 가능."""
+    m = OFFER_RE.search(item_url)
+    attrs = parse_attr_text(text) or (data.get("attrs") or {})
+    tiers = emb.get("tiers") or []
+    price_raw = ""
+    if tiers:
+        price_raw = "¥" + "/".join(f"{t['unit_price']:g}" for t in tiers[:3])
+    else:
+        # 텍스트 폴백: '券后 ¥0.90起' 같은 쿠폰가는 건너뛰고 SKU 행의 '¥9.5' 를 쓴다
+        prices = [float(x) for x in re.findall(r"[¥￥]\s*(\d+(?:\.\d+)?)\s*(?:\n|\s)*库存", text)]
+        if prices:
+            tiers = [{"min_qty": 1, "unit_price": min(prices)}]
+            price_raw = f"¥{min(prices):g}"
+        else:
+            price_raw, tiers = parse_price(text)
+    weight_g = emb.get("weight_g")
+    weight_raw = f"{weight_g:g}g" if weight_g else (attrs.get("重量") or attrs.get("毛重") or attrs.get("净重") or "")
+    images = emb.get("images") or [re.sub(r"_\.(avif|webp)$", "", u) for u in (data.get("imgs") or [])]
+    main_img = images[0] if images else ((data.get("metas") or {}).get("og:image") or "")
+    moq = min([t["min_qty"] for t in tiers] or [parse_moq(text)])
+    moq = max(moq, parse_moq(text)) if "起批" in text else moq
+    ext: dict = {}
+    sales = parse_sales(text)
+    if sales is not None:
+        ext["sales"] = sales
+    if emb.get("company"):
+        ext["company"] = emb["company"]
+    if emb.get("cat_id"):
+        ext["cat_id_1688"] = emb["cat_id"]
+    if emb.get("dims_cm"):
+        ext["dims_cm"] = emb["dims_cm"]
+    options = emb.get("options") or []
+    sold_out = ("已下架" in text or "商品不存在" in text) or (bool(options) and all(o.get("sold_out") for o in options))
+    return RawDetail(
+        source_id="1688", item_id=m.group(1) if m else item_url, url=item_url,
+        title_raw=emb.get("title") or (data.get("metas") or {}).get("og:title") or (data.get("title") or "").split(" - ")[0], lang="zh",
+        price_raw=price_raw, price_tiers=tiers, currency="CNY", moq=moq, image_url=main_img,
+        category_raw=" > ".join(data.get("crumbs") or []), attrs_raw=attrs, weight_raw=weight_raw, sold_out=sold_out,
+        images=images[:30], attrs_full=attrs, package_weight_raw=weight_raw,
+        options=[{"sku_id": o["sku_id"], "name_raw": o["name_raw"], "price": o["price"], "sold_out": o["sold_out"]} for o in options][:60],
+        extra=ext,
+    )
 
 
 def main(argv=None) -> int:

@@ -46,6 +46,15 @@ class Dictionary:
                 return c
         return None
 
+    def category_for_text(self, text: str) -> str | None:
+        """빵부스러기가 없을 때: 제목 안에서 가장 긴 카테고리 별칭 표기를 찾아 그 표준 카테고리로 (保温杯 → kitchen.tumbler)."""
+        t = (text or "").lower()
+        best = None
+        for (term, _lang), cid in self.category_aliases.items():
+            if len(term) >= 2 and term in t and (best is None or len(term) > len(best[0])):
+                best = (term, cid)
+        return best[1] if best else None
+
     def code_for(self, kind: str, term: str) -> str | None:
         t = term.strip().lower()
         if (kind, t) in self.attribute_aliases:

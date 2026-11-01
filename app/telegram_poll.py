@@ -55,9 +55,15 @@ def handle_message(c, user_id: str, m: dict, bot) -> None:
     text = m.get("text") or ""
     urls = URL_RE.findall(text)
     if urls:
+        from app.instant import process_queue
+
         for u in urls[:5]:
             c.table("analysis_requests").insert({"user_id": user_id, "channel": "telegram", "url": u, "status": "queued"}).execute()
-        bot.send_text(f"URL {len(urls[:5])}건 접수 → 즉시 분석 큐 (7단계에서 처리)")
+        bot.send_text(f"URL {len(urls[:5])}건 접수 → 분석 중 (보통 1~2분)")
+        try:
+            process_queue(c, user_id, limit=len(urls[:5]), bot=bot)
+        except Exception as e:
+            bot.send_text(f"즉시 분석 오류: {type(e).__name__}: {str(e)[:200]}")
     elif text.startswith("/recent"):
         n = int(text.split()[1]) if len(text.split()) > 1 and text.split()[1].isdigit() else 10
         rows = c.table("candidates").select("run_date, status, margin_rate, score, source_item_id").order("created_at", desc=True).limit(n).execute().data
