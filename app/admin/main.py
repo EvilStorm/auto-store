@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from app import auth, repo
 from app.config import ROOT, settings
 from app.db import NotLoggedIn, current_user_id, pc_name, user_client
+from app.pipeline.notify import FLAG_KO
 
 app = FastAPI(title="auto-store 관리자", docs_url=None, redoc_url=None)
 templates = Jinja2Templates(directory=str(ROOT / "templates" / "admin"))
@@ -28,6 +29,14 @@ MENU = [
     ("/settings", "설정"), ("/dict", "사전 관리"), ("/logs", "실행 로그"), ("/instant", "즉시 분석"), ("/orders", "주문 관리"),
 ]
 STAGES = ("collect", "lookup", "score", "notify", "content", "package", "monitor")
+STATUS_KO = {"candidate": "후보", "below_margin": "마진 미달·비교가 없음", "held": "보류", "rejected_1": "1차 거절", "approved_1": "1차 승인", "detail_collected": "상세 수집됨",
+             "content_generated": "콘텐츠 생성됨", "rejected_2": "2차 폐기", "revise": "수정 요청", "approved_2": "2차 승인", "packaged": "패키지 완료", "listed": "등록됨(감시 중)", "suspended": "판매 중지"}
+COST_KO = [("currency", "통화"), ("rate_krw", "환율(원)"), ("unit_price_src", "소스 단가"), ("moq", "최소 수량"), ("purchase_krw", "구매 원가"), ("local_shipping_krw", "현지 배송비"),
+           ("proxy_fee_krw", "대리구매 수수료"), ("forwarder_krw", "배대지 요금"), ("customs_krw", "관부가세"), ("naver_fee_krw", "네이버 수수료"), ("payment_fee_krw", "결제 수수료"),
+           ("fx_buffer_krw", "환차손 완충"), ("total_cost_krw", "총원가"), ("taxable_usd", "과세가격(USD)"), ("weight_g", "무게(g)")]
+FLAG_SHORT = {"weight_unknown": "무게 미확인", "near_customs_limit": "과세 경계", "over_customs_limit": "관부가세", "rate_stale": "환율 오래됨", "requirement_needed": "요건 필요",
+              "requirement_unknown": "요건 미확정", "brand_detected": "브랜드 감지", "price_is_reference": "참고가", "few_matches": "비교 1~2건", "no_domestic_price": "비교가 없음", "weight_estimated": "무게 추정"}
+RELATION_KO = {"exact": "정확 (같은 상품)", "similar": "유사 (같은 종류 · 참고가)", "unrelated": "무관 (임계값 미만)"}
 ORDER_STATUSES = ["new", "pccc_check", "source_ordered", "at_forwarder", "shipped", "customs", "delivered", "canceled"]
 ORDER_KO = {"new": "신규", "pccc_check": "통관부호 확인", "source_ordered": "소스 주문 완료", "at_forwarder": "배대지 입고", "shipped": "발송", "customs": "통관", "delivered": "배송 완료", "canceled": "취소"}
 JOBS: dict[str, dict] = {}          # stage → {proc, log, started}
@@ -179,13 +188,13 @@ def candidates(request: Request):
     ids = [r["source_item_id"] for r in rows]
     items = {i["id"]: i for i in c.table("source_items").select("id, title_raw, url, main_image_url, source_id").in_("id", ids).execute().data} if ids else {}
     norms = {n["source_item_id"]: n for n in c.table("source_items_normalized").select("source_item_id, title_clean, search_queries").in_("source_item_id", ids).execute().data} if ids else {}
-    statuses = ["candidate", "below_margin", "held", "rejected_1", "approved_1", "detail_collected", "content_generated", "approved_2", "packaged", "listed", "suspended"]
-    return page(request, "candidates.html", profile=prof, rows=rows, items=items, norms=norms, status=status, day=day, statuses=statuses)
+    statuses = ["candidate", "below_margin", "held", "rejected_1", "approved_1", "detail_collected", "content_generated", "revise", "approved_2", "packaged", "listed", "suspended"]
+    return page(request, "candidates.html", profile=prof, rows=rows, items=items, norms=norms, status=status, day=day, statuses=statuses, status_ko=STATUS_KO, flag_ko=FLAG_SHORT)
 
 
 @app.get("/candidates/{cid}", response_class=HTMLResponse)
 def candidate_detail(cid: int, request: Request):
-    from app.pipeline.notify import FLAG_KO, render_card
+    from app.pipeline.notify import render_card
 
     c, uid, prof = get_client()
     if c is None:
@@ -199,16 +208,29 @@ def candidate_detail(cid: int, request: Request):
     sig = (c.table("market_signals").select("*").eq("source_item_id", item["id"]).limit(1).execute().data or [{}])[0]
     matches = c.table("matches").select("nv_mid, relation, method, similarity, reason").eq("source_item_id", item["id"]).execute().data
     nv = {x["nv_mid"]: x for x in c.table("naver_items").select("*").in_("nv_mid", [m["nv_mid"] for m in matches]).execute().data} if matches else {}
-    merged = sorted([{**nv.get(m["nv_mid"], {}), **m} for m in matches if m["nv_mid"] in nv], key=lambda m: (m["relation"] != "exact", m["method"] != "llm", -(m.get("similarity") or 0)))
+    order = {"exact": 0, "similar": 1, "unrelated": 2}
+    merged = sorted([{**nv.get(m["nv_mid"], {}), **m} for m in matches if m["nv_mid"] in nv], key=lambda m: (order.get(m["relation"], 3), m["method"] != "llm", -(m.get("similarity") or 0)))
+    # 같은 nv_mid 에 clip 판정과 llm 재판정이 둘 다 있으면 llm 을 앞에 두고 clip 유사도를 붙여 한 행으로
+    seen: dict[str, dict] = {}
+    for m in merged:
+        if m["nv_mid"] in seen:
+            prev = seen[m["nv_mid"]]
+            if prev.get("similarity") is None and m.get("similarity") is not None:
+                prev["similarity"] = m["similarity"]
+            continue
+        seen[m["nv_mid"]] = m
+    merged = list(seen.values())
     logo = (c.table("images").select("logo_checked_at, logo_detected, logo_reason").eq("kind", "source").eq("ref_id", str(item["id"])).limit(1).execute().data or [None])[0]
-    card = render_card(item, norm, sig, cand, matches=merged, logo=logo, source_name=item["source_id"])
+    card = render_card(item, norm, sig, cand, matches=[m for m in merged if m["relation"] != "unrelated"], logo=logo, source_name=item["source_id"])
     detail = (c.table("source_item_details").select("options_json, images, package_weight_g, fetched_at").eq("source_item_id", item["id"]).limit(1).execute().data or [None])[0]
     content = (c.table("generated_contents").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     pkg = (c.table("packages").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     listing = (c.table("listings").select("*").eq("candidate_id", cid).limit(1).execute().data or [None])[0]
     events = c.table("monitor_events").select("*").eq("candidate_id", cid).order("created_at", desc=True).limit(20).execute().data if listing else []
+    cost_rows = [(label, cand.get("cost_breakdown_json", {}).get(k)) for k, label in COST_KO if cand.get("cost_breakdown_json", {}).get(k) is not None]
     return page(request, "candidate.html", profile=prof, cand=cand, item=item, norm=norm, sig=sig, matches=merged, card=card, logo=logo, flag_ko=FLAG_KO,
-                detail=detail, content=content, pkg=pkg, listing=listing, events=events)
+                detail=detail, content=content, pkg=pkg, listing=listing, events=events, status_ko=STATUS_KO, relation_ko=RELATION_KO, cost_rows=cost_rows,
+                n_unrelated=sum(1 for m in merged if m["relation"] == "unrelated"))
 
 
 @app.post("/candidates/{cid}/stage2/{action}")

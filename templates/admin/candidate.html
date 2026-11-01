@@ -1,52 +1,105 @@
 {% extends "base.html" %}{% block title %}후보 #{{ cand.id }}{% endblock %}
 {% block body %}
-<h2>후보 #{{ cand.id }} <span class="tag">{{ cand.status }}</span> <small style="font-weight:400"><a href="/candidates">← 목록</a></small></h2>
-<div class="grid2">
-  <article>
-    {% if item.main_image_url %}<img src="{{ item.main_image_url|img }}" style="max-width:100%;max-height:320px;object-fit:contain">{% endif %}
-    <p><strong>{{ norm.title_clean or item.title_raw }}</strong><br><small>{{ item.title_raw }}</small><br><a href="{{ item.url }}" target="_blank">{{ item.url }}</a></p>
-    <p>재질 {{ norm.material_code or '-' }} · 품목 {{ norm.item_type }} · 카테고리 {{ norm.canonical_category_id }} · 검색어 {{ (norm.search_queries or [])|join(' / ') }}</p>
-    {% if logo %}<p>로고 확인: {{ '감지 — ' ~ logo.logo_reason if logo.logo_detected else ('없음' if logo.logo_checked_at else '미확인') }}</p>{% endif %}
-    <div class="row-actions">
-      <form method="post" action="/candidates/{{ cand.id }}/approve" class="inline"><button>승인 (상세 수집 대기)</button></form>
+<style>
+  .hero { display: grid; grid-template-columns: minmax(200px, 300px) 1fr; gap: 1.2rem; align-items: start; }
+  .hero img.main { width: 100%; max-width: 300px; aspect-ratio: 1; object-fit: contain; background: #fff; border: 1px solid #e3e3e3; border-radius: 8px; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; margin: .6rem 0; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; } }
+  .facts article { margin: 0; padding: .55rem .7rem; }
+  .facts .v { font-size: 1.25rem; font-weight: 700; } .facts .l { font-size: .72rem; color: #666; }
+  .title { font-size: 1.15rem; font-weight: 700; margin: 0 0 .2rem; line-height: 1.35; }
+  .meta { color: #666; font-size: .85rem; }
+  .meta code { font-size: .8rem; }
+  .actions { margin-top: .6rem; display: flex; gap: .4rem; flex-wrap: wrap; }
+  .actions button { margin: 0; }
+  .rel-exact { background: #D9F2E3; } .rel-similar { background: #DDEBFF; } .rel-unrelated { background: #EEF0F4; color: #777; }
+  .muted { color: #888; }
+  table.cost td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  section > article { margin-bottom: 1rem; }
+  .help { background: #F7F8FA; border-left: 3px solid #2B6CB0; padding: .5rem .8rem; font-size: .82rem; color: #444; margin: .4rem 0 .8rem; }
+</style>
+
+<h2 style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">후보 #{{ cand.id }}
+  <span class="tag {{ 'ok' if cand.status in ('approved_1','approved_2','packaged','listed') else 'bad' if cand.status.startswith('rejected') or cand.status == 'suspended' else '' }}">{{ status_ko.get(cand.status, cand.status) }}</span>
+  <span class="tag">{{ item.source_id }}</span><span class="tag">{{ cand.run_date }} · {{ cand.origin }}</span>
+  <small style="font-weight:400;margin-left:auto"><a href="/candidates">← 목록</a></small></h2>
+
+<section class="hero">
+  <div>
+    {% if item.main_image_url %}<img class="main" src="{{ item.main_image_url|img }}">{% endif %}
+    {% if logo %}<p class="meta" style="margin:.4rem 0 0">로고 확인: {% if logo.logo_checked_at %}{{ '감지 — ' ~ logo.logo_reason if logo.logo_detected else '없음' }}{% else %}미확인 (카드로 나갈 때 N건만 비전 확인){% endif %}</p>{% endif %}
+  </div>
+  <div>
+    <p class="title">{{ norm.title_clean or item.title_raw }}</p>
+    <p class="meta">{{ item.title_raw }}<br><a href="{{ item.url }}" target="_blank">{{ item.url }}</a></p>
+    <p class="meta">재질 <code>{{ norm.material_code or '-' }}</code> · 품목 <code>{{ norm.item_type }}</code> · 카테고리 <code>{{ norm.canonical_category_id or '-' }}</code> · 검색어 {% for q in (norm.search_queries or []) %}<span class="tag">{{ q }}</span>{% endfor %}</p>
+    <div class="facts">
+      <article><div class="v">{{ cand.margin_rate|pct }}</div><div class="l">마진율 (국내 비교가 기준)</div></article>
+      <article><div class="v">{{ cand.score if cand.score is not none else '-' }}</div><div class="l">후보 점수 {% if cand.score_parts_json %}<span class="muted">{{ cand.score_parts_json }}</span>{% endif %}</div></article>
+      <article><div class="v">{{ cand.domestic_price_krw|won }}</div><div class="l">국내 비교가 ({{ '정확' if sig.basis_type == 'exact' else '유사 참고' if sig.basis_type == 'similar' else '없음' }})</div></article>
+      <article><div class="v">{{ cand.suggested_price_krw|won }}</div><div class="l">제안 판매가 (목표 마진)</div></article>
+      <article><div class="v">{{ (cand.cost_breakdown_json or {}).get('total_cost_krw')|won }}</div><div class="l">총원가 (소스가 {{ (cand.cost_breakdown_json or {}).get('currency','') }} {{ (cand.cost_breakdown_json or {}).get('unit_price_src','') }} × {{ (cand.cost_breakdown_json or {}).get('moq','') }})</div></article>
+      <article><div class="v">{{ sig.exact_count or 0 }} / {{ sig.similar_count or 0 }}</div><div class="l">정확 / 유사 매칭 (수집 {{ sig.total_results or 0 }})</div></article>
+      <article><div class="v">{{ sig.review_top or '-' }}</div><div class="l">리뷰 최대 · 찜 {{ sig.wish_top or '-' }}</div></article>
+      <article><div class="v">{{ sig.same_image_sellers if sig.same_image_sellers is not none else '-' }}</div><div class="l">동일 사진 판매자 · 판매처 최대 {{ sig.seller_count_max or '-' }}</div></article>
+    </div>
+    {% if cand.flags %}<p>{% for f in cand.flags %}<span class="tag warn">{{ flag_ko.get(f, f) }}</span>{% endfor %}</p>{% endif %}
+    <div class="actions">
+      {% if cand.status in ('candidate', 'held', 'below_margin') %}
+      <form method="post" action="/candidates/{{ cand.id }}/approve" class="inline"><button>승인 → 상세 수집 · 콘텐츠</button></form>
       <form method="post" action="/candidates/{{ cand.id }}/reject" class="inline"><button class="secondary">거절 (90일 제외)</button></form>
       <form method="post" action="/candidates/{{ cand.id }}/hold" class="inline"><button class="outline">보류</button></form>
+      {% endif %}
     </div>
-  </article>
-  <article>
-    <header><strong>카드 (텔레그램과 동일)</strong></header>
-    <pre class="card">{{ card }}</pre>
-    <small>점수 분해 {{ cand.score_parts_json }} · 플래그 {% for f in cand.flags %}<span class="tag warn" title="{{ flag_ko.get(f, f) }}">{{ flag_ko.get(f, f) }}</span>{% endfor %}</small>
-  </article>
-</div>
+  </div>
+</section>
+
+<section>
 <article>
-  <header><strong>매칭 {{ matches|length }}건</strong> <small>정확 {{ sig.exact_count or 0 }} · 유사 {{ sig.similar_count or 0 }} · 수집 {{ sig.total_results or 0 }} · 동일 사진 판매자 {{ sig.same_image_sellers if sig.same_image_sellers is not none else '-' }} · 가격 평균 {{ sig.price_mean|won }} / 중앙 {{ sig.price_median|won }} / 최저 {{ sig.price_min|won }}</small></header>
+  <header><strong>국내 비교 상품 {{ matches|length }}건</strong> <span class="muted">정확 {{ sig.exact_count or 0 }} · 유사 {{ sig.similar_count or 0 }} · 무관 {{ n_unrelated }} · 가격 평균 {{ sig.price_mean|won }} / 중앙 {{ sig.price_median|won }} / 최저 {{ sig.price_min|won }}</span></header>
+  <div class="help">네이버 통합검색 쇼핑 블록에서 검색어별 상위 결과를 모아 소스 이미지와 비교합니다. <b>유사</b>는 "같은 종류"라 국내 가격대의 참고치이고, <b>정확</b>(같은 상품)은 동일 사진이거나 카드 발송 때 LLM 재판정에서 확정됩니다. <b>무관</b>은 비교했지만 유사도가 기준 미만인 것입니다.</div>
+  {% if matches %}
+  {% if matches|length > n_unrelated %}
   <table>
-    <thead><tr><th></th><th>네이버 상품</th><th>가격</th><th>리뷰</th><th>판매처</th><th>판정</th><th>방법</th><th>유사도</th><th>근거</th></tr></thead>
-    <tbody>{% for m in matches %}
+    <thead><tr><th></th><th>네이버 상품</th><th>가격</th><th>리뷰</th><th>판매처</th><th>판정</th><th>유사도</th><th>근거</th></tr></thead>
+    <tbody>{% for m in matches %}{% if m.relation != 'unrelated' %}
     <tr>
       <td>{% if m.image_url %}<img class="thumb" src="{{ m.image_url|img }}" loading="lazy">{% endif %}</td>
-      <td><a href="{{ m.link }}" target="_blank">{{ m.title }}</a><br><small>{{ m.mall or '' }}</small></td>
+      <td><a href="{{ m.link }}" target="_blank">{{ m.title }}</a><br><small class="muted">{{ m.mall or '' }}</small></td>
       <td>{{ m.price|won }}</td><td>{{ m.review_count or '-' }}</td><td>{{ m.seller_count or '-' }}</td>
-      <td><span class="tag {{ 'ok' if m.relation == 'exact' else '' }}">{{ m.relation }}</span></td><td>{{ m.method }}</td><td>{{ m.similarity or '-' }}</td><td><small>{{ m.reason }}</small></td>
-    </tr>{% endfor %}</tbody>
+      <td><span class="tag rel-{{ m.relation }}">{{ relation_ko.get(m.relation, m.relation) }}</span><br><small class="muted">{{ 'LLM 재판정' if m.method == 'llm' else 'CLIP' if m.method == 'clip' else '규칙' }}</small></td>
+      <td>{{ m.similarity or '-' }}</td><td><small>{{ m.reason }}</small></td>
+    </tr>{% endif %}{% endfor %}</tbody>
   </table>
+  {% else %}
+  <p class="flash">{{ n_unrelated }}건을 비교했지만 전부 기준 미만이라 국내 비교가가 없습니다 → 마진을 계산할 수 없어 <b>마진 미달·비교가 없음</b> 상태입니다. 검색어를 바꾸거나(관심 카테고리 · 규칙) 아래 목록에서 실제 같은 상품이 있는지 눈으로 확인해 보세요.</p>
+  {% endif %}
+  {% if n_unrelated %}
+  <details><summary>무관으로 분류된 {{ n_unrelated }}건 보기 (비교는 했지만 기준 미만)</summary>
+    <table><tbody>{% for m in matches %}{% if m.relation == 'unrelated' %}
+      <tr><td>{% if m.image_url %}<img class="thumb" src="{{ m.image_url|img }}" loading="lazy">{% endif %}</td><td><a href="{{ m.link }}" target="_blank">{{ m.title }}</a></td><td>{{ m.price|won }}</td><td>{{ m.similarity or '-' }}</td><td><small class="muted">{{ m.reason }}</small></td></tr>
+    {% endif %}{% endfor %}</tbody></table>
+  </details>{% endif %}
+  {% else %}
+  <p class="muted">비교 결과가 없습니다 — 국내 조회(③)가 아직 안 돌았거나 검색어로 쇼핑 결과가 없었습니다. 대시보드의 "③ 국내 조회" 를 실행해 보세요.</p>
+  {% endif %}
 </article>
+
 <article>
-  <header><strong>2차 · 등록 콘텐츠</strong> <small>⑥ 상세 수집 → ⑦ 생성(LLM) → ⑧ 검토 → ⑨ 패키지</small></header>
-  <div class="row-actions" style="margin-bottom:.6rem">
+  <header><strong>2차 · 등록 콘텐츠</strong> <span class="muted">⑥ 상세 수집 → ⑦ 생성(LLM) → ⑧ 검토 → ⑨ 패키지</span></header>
+  <div class="actions" style="margin:.2rem 0 .8rem">
     <form method="post" action="/candidates/{{ cand.id }}/stage2/generate" class="inline"><button>{{ '다시 생성' if content else '상세 수집 + 콘텐츠 생성' }} (1~2분 · LLM 1회)</button></form>
-    {% if content %}<form method="post" action="/candidates/{{ cand.id }}/stage2/package" class="inline"><button class="contrast">등록 패키지 생성</button></form>{% endif %}
+    {% if content %}<form method="post" action="/candidates/{{ cand.id }}/stage2/package" class="inline"><button class="contrast">등록 패키지 생성 (이미지 업로드 · 엑셀)</button></form>{% endif %}
     <form method="post" action="/candidates/{{ cand.id }}/stage2/discard" class="inline"><button class="secondary">폐기</button></form>
   </div>
-  {% if detail %}<p><small>상세: 옵션 {{ (detail.options_json or [])|length }}개 · 이미지 {{ (detail.images or [])|length }}장 · 무게 {{ detail.package_weight_g or '-' }}g · {{ detail.fetched_at|ts }}</small></p>{% endif %}
+  {% if detail %}<p class="meta">상세: 옵션 {{ (detail.options_json or [])|length }}개 · 이미지 {{ (detail.images or [])|length }}장 · 무게 {{ detail.package_weight_g or '-' }}g · {{ detail.fetched_at|ts }}</p>{% endif %}
   {% if content %}
     <p><strong>상품명 후보</strong> {% for t in content.title_options %}<span class="tag {{ 'ok' if t == content.title_chosen else '' }}">{{ t }}</span>{% endfor %}</p>
     <p><strong>옵션</strong> {% for o in content.options_ko_json %}<span class="tag {{ '' if o.sell else 'bad' }}" title="{{ o.name_raw }}">{{ o.name_ko }}</span>{% endfor %}</p>
     {% if content.forbidden_hits %}<p class="flash">금지 문구 감지: {{ content.forbidden_hits|join(', ') }}</p>{% endif %}
-    {% if content.revise_note %}<p><small>수정 메모: {{ content.revise_note }}</small></p>{% endif %}
-    <details><summary>상세 설명 HTML (LLM {{ content.llm_cost_krw }}원 · 이미지 {{ content.image_urls|length }}장 · 모드 {{ content.mode }})</summary><div style="border:1px solid #ddd;padding:.8rem;background:#fff">{{ content.description_html|safe }}</div></details>
-  {% endif %}
+    {% if content.revise_note %}<p class="meta">수정 메모: {{ content.revise_note }}</p>{% endif %}
+    <details><summary>상세 설명 미리보기 (LLM {{ content.llm_cost_krw }}원 · 이미지 {{ content.image_urls|length }}장 · 모드 {{ content.mode }})</summary><div style="border:1px solid #ddd;padding:.8rem;background:#fff">{{ content.description_html|safe }}</div></details>
+  {% else %}<p class="muted">아직 생성 전. 승인 뒤 버튼을 누르거나 텔레그램 [승인] 으로 자동 생성됩니다.</p>{% endif %}
   {% if pkg %}<p><strong>패키지</strong> 판매가 {{ pkg.sale_price_krw|won }} · 공개 이미지 {{ pkg.image_public_urls|length }}장 · <code>{{ pkg.output_path }}</code> · {{ pkg.created_at|ts }}</p>
     {% if cand.status == 'packaged' %}
     <form method="post" action="/candidates/{{ cand.id }}/listed" class="grid" style="align-items:end">
@@ -63,8 +116,16 @@
         <form method="post" action="/monitor/{{ ev.id }}/ignore" class="inline"><button class="outline">무시</button></form></span>{% else %} · 결정 {{ ev.decision }}{% endif %}</div>{% endfor %}
   {% endif %}
 </article>
-<article>
-  <header><strong>원가 내역</strong></header>
-  <table>{% for k, v in cand.cost_breakdown_json.items() %}<tr><td>{{ k }}</td><td style="text-align:right">{{ v }}</td></tr>{% endfor %}</table>
-</article>
+
+<div class="grid2">
+  <article>
+    <header><strong>원가 내역</strong> <span class="muted">내 배송 프로필 · 수수료 설정 기준</span></header>
+    <table class="cost">{% for label, v in cost_rows %}<tr><td>{{ label }}</td><td>{{ v }}</td></tr>{% endfor %}</table>
+  </article>
+  <article>
+    <header><strong>텔레그램 카드 원문</strong></header>
+    <details><summary>펼치기</summary><pre class="card">{{ card }}</pre></details>
+  </article>
+</div>
+</section>
 {% endblock %}

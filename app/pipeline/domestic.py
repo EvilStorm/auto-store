@@ -44,6 +44,7 @@ class Candidate:
 class Judgement:
     exact: list[dict] = field(default_factory=list)
     similar: list[dict] = field(default_factory=list)
+    unrelated: list[dict] = field(default_factory=list)   # 비교는 했지만 임계값 미만 — 화면에서 "무관" 으로 보여준다
     same_image_sellers: int = 0
     total: int = 0
 
@@ -100,16 +101,18 @@ def judge(source_clip: list[float] | None, source_phash: str | None, source_numb
             reasons.append("용량 불일치 → 유사")
         elif agree is True:
             reasons.append("용량 일치")
-        if rel is None:
-            continue
         row = {"nv_mid": c.nv_mid, "title": c.title, "price": c.price, "mall": c.mall, "review_count": c.review_count,
                "wish_count": c.wish_count, "seller_count": c.seller_count, "cat_id": c.cat_id,
                "similarity": round(sim, 3) if sim is not None else None, "reason": " · ".join(reasons),
                "matched_numbers": {"capacity_agree": agree}}
+        if rel is None:
+            row["reason"] += " → 임계값 미만"
+            j.unrelated.append(row)
+            continue
         (j.exact if rel == "exact" else j.similar).append(row)
     j.same_image_sellers = len(malls_same_image)
-    j.exact.sort(key=lambda r: -(r["similarity"] or 0))
-    j.similar.sort(key=lambda r: -(r["similarity"] or 0))
+    for lst in (j.exact, j.similar, j.unrelated):
+        lst.sort(key=lambda r: -(r["similarity"] or 0))
     return j
 
 
@@ -241,7 +244,7 @@ def lookup(c, source_item: dict, normalized: dict, *, ttl_days: int | None = Non
     method = "clip" if want_clip else "rule"
     match_rows = [{"source_item_id": source_item["id"], "nv_mid": r["nv_mid"], "relation": rel, "method": method,
                    "similarity": r["similarity"], "matched_numbers_json": r["matched_numbers"], "reason": r["reason"], "computed_at": _now().isoformat()}
-                  for rel, rows in (("exact", j.exact), ("similar", j.similar)) for r in rows]
+                  for rel, rows in (("exact", j.exact), ("similar", j.similar), ("unrelated", j.unrelated)) for r in rows]
     c.table("matches").delete().eq("source_item_id", source_item["id"]).eq("method", method).execute()
     if match_rows:
         c.table("matches").upsert(match_rows, on_conflict="source_item_id,nv_mid,method").execute()

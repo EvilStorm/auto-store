@@ -45,6 +45,7 @@ def test_judge_with_clip_and_numbers():
     j = domestic.judge(src, None, src_numbers, cands)
     assert [r["nv_mid"] for r in j.exact] == ["a"]
     assert sorted(r["nv_mid"] for r in j.similar) == ["b", "c"]
+    assert [r["nv_mid"] for r in j.unrelated] == ["d"] and "임계값 미만" in j.unrelated[0]["reason"]   # 광고는 아예 제외
     assert "용량 불일치" in next(r for r in j.similar if r["nv_mid"] == "b")["reason"]
     s = j.signals()
     assert s["exact_count"] == 1 and s["similar_count"] == 2 and s["total_results"] == 5
