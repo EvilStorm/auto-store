@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 import traceback
 from datetime import date, datetime, timezone
 from urllib.parse import urlparse
@@ -134,14 +135,22 @@ def _normalize_and_store(c, d, sid: int, source_id: str, *, generic_norm=None):
     return row
 
 
-def _lookup_and_score(c, uid: str, sid: int, item: dict, n_row: dict) -> dict | None:
+def _lookup_and_score(c, uid: str, sid: int, item: dict, n_row: dict, progress=None) -> dict | None:
     from app.pipeline import domestic, scoring
 
     prof = settings.profiles_dir / "naver"
     domestic.lookup(c, item, n_row, naver_profile_dir=prof if prof.exists() else None)
+    if progress:
+        progress.step("score")
     scoring.run(c, uid, only_item=sid, origin="instant")
     rows = c.table("candidates").select("*").eq("source_item_id", sid).eq("run_date", date.today().isoformat()).limit(1).execute().data
-    return rows[0] if rows else None
+    if rows:
+        return rows[0]
+    # 오늘 새로 만들어지지 않았으면 이미 진행 중인 후보(승인·등록 등)가 있는지 — 그걸 결과로 보여준다
+    prev = c.table("candidates").select("*").eq("source_item_id", sid).order("id", desc=True).limit(1).execute().data
+    if prev:
+        prev[0]["_existing"] = True
+    return prev[0] if prev else None
 
 
 def _card(c, item: dict, n_row: dict, cand: dict | None) -> str:
@@ -160,6 +169,57 @@ def _today_count(c, uid: str) -> int:
     return c.table("analysis_requests").select("*", count="exact").gte("requested_at", date.today().isoformat()).limit(1).execute().count or 0
 
 
+# 진행 단계 (관리자 웹 즉시 분석 화면이 analysis_requests.progress_json 을 폴링해 보여준다)
+STEPS = {
+    "adapter": [("source", "소스 판별"), ("detail", "상세 수집 (브라우저)"), ("normalize", "저장 · 정규화"), ("lookup", "국내 조회 (네이버 · 이미지 비교)"),
+                ("score", "원가 · 점수"), ("card", "카드 작성")],
+    "llm": [("source", "소스 판별"), ("fetch", "페이지 읽기"), ("extract", "LLM 추출 (캐시 우선)"), ("normalize", "정규화 · 저장"),
+            ("lookup", "국내 조회 (네이버 · 이미지 비교)"), ("score", "원가 · 점수"), ("card", "카드 작성")],
+}
+
+
+class _Progress:
+    """단계가 바뀔 때마다 progress_json 을 통째로 갱신. 실패해도 분석은 계속(진행 표시는 부가 기능)."""
+
+    def __init__(self, c, request_id: int):
+        self.c, self.rid, self.path, self.t0, self.started = c, request_id, "adapter", time.monotonic(), time.monotonic()
+        self.done: list[tuple[str, float]] = []
+        self.current: str | None = None
+
+    def set_path(self, path: str):
+        self.path = path
+
+    def step(self, key: str, note: str = ""):
+        if self.current:
+            self.done.append((self.current, round(time.monotonic() - self.started, 1)))
+        self.current, self.started = key, time.monotonic()
+        self._write(note)
+
+    def finish(self, status: str, note: str = ""):
+        failed = None
+        if self.current:
+            if status == "done":
+                self.done.append((self.current, round(time.monotonic() - self.started, 1)))
+            else:
+                failed = self.current                      # 실패한 단계는 done 에 넣지 않고 'failed' 로 표시
+        self.current = None
+        self._write(note, final=status, failed=failed)
+
+    def _write(self, note: str, final: str | None = None, failed: str | None = None):
+        keys = STEPS[self.path]
+        done = dict(self.done)
+        steps = [{"key": k, "label": lb, "status": ("done" if k in done else "running" if k == self.current else "failed" if k == failed else "pending"),
+                  "sec": done.get(k)} for k, lb in keys]
+        n_done = len([x for x in steps if x["status"] == "done"])
+        pct = 100 if final == "done" else int(n_done / len(keys) * 100)
+        body = {"path": self.path, "step": self.current, "pct": pct, "steps": steps, "note": note, "elapsed": round(time.monotonic() - self.t0, 1),
+                "updated_at": _now()}
+        try:
+            self.c.table("analysis_requests").update({"progress_json": body}).eq("id", self.rid).execute()
+        except Exception:
+            pass
+
+
 def analyze(c, uid: str, url: str, *, channel: str = "cli", headed: bool = False, request_id: int | None = None) -> dict:
     """1건 분석. 반환 {status, card, candidate_id, summary, error, request_id}."""
     if request_id is None:
@@ -169,10 +229,14 @@ def analyze(c, uid: str, url: str, *, channel: str = "cli", headed: bool = False
     else:
         c.table("analysis_requests").update({"status": "running"}).eq("id", request_id).execute()
     out: dict = {"request_id": request_id, "status": "failed"}
+    pg = _Progress(c, request_id)
     try:
+        pg.step("source")
         source = find_source(c, url)
         if source and source["adapter_key"] in ("1688",):
+            pg.step("detail", f"{source['id']} 어댑터 · AI 0회")
             d = _detail_via_adapter(source, url, headed=headed)
+            pg.step("normalize", (d.title_raw or "")[:60])
             sid = _store_detail(c, d)
             item = c.table("source_items").select("*").eq("id", sid).limit(1).execute().data[0]
             n_row = _normalize_and_store(c, d, sid, source["id"])
@@ -186,12 +250,16 @@ def analyze(c, uid: str, url: str, *, channel: str = "cli", headed: bool = False
 
             set_backend(SupabaseCache(c))
             llm = get_llm()
+            pg.set_path("llm")
+            pg.step("fetch", "미등록 사이트 · 범용 경로")
             snap = fetch_page(url, headed=headed)
             if snap.blocked_hint and (len(snap.text) < 200 or "없음" in snap.blocked_hint):
                 raise RuntimeError(f"페이지를 읽지 못함: {snap.blocked_hint}")
+            pg.step("extract", f"본문 {len(snap.text):,}자")
             raw, cached = _extract_generic(c, llm, snap)
             if not raw.is_product_page:
                 raise RuntimeError(f"상품 페이지가 아님: {raw.page_problem}")
+            pg.step("normalize", "추출 캐시 적중" if cached else "LLM 호출")
             gnorm = llm_normalize(llm, raw, snap)
             host = urlparse(snap.final_url).netloc.lower()
             src = _ensure_generic_source(c, host)
@@ -205,15 +273,20 @@ def analyze(c, uid: str, url: str, *, channel: str = "cli", headed: bool = False
             n_row = _normalize_and_store(c, li, sid, src["id"], generic_norm=gnorm)
             path = "llm" + ("(추출 캐시)" if cached else "")
             out["llm_cost_krw"] = llm.total_cost_krw()
-        cand = _lookup_and_score(c, uid, sid, item, n_row)
+        pg.step("lookup", " / ".join(n_row.get("search_queries") or [])[:80])
+        cand = _lookup_and_score(c, uid, sid, item, n_row, progress=pg)
+        pg.step("card")
         card = _card(c, item, n_row, cand)
         summary = {"path": path, "margin_rate": cand.get("margin_rate") if cand else None, "score": cand.get("score") if cand else None,
-                   "status": cand.get("status") if cand else "no_candidate", "excluded_reason": n_row.get("excluded_reason"), "search_queries": n_row.get("search_queries")}
+                   "status": cand.get("status") if cand else "no_candidate", "excluded_reason": n_row.get("excluded_reason"), "search_queries": n_row.get("search_queries"),
+                   "existing": bool(cand and cand.get("_existing"))}
         c.table("analysis_requests").update({"status": "done", "source_id": item["source_id"], "source_item_id": sid, "candidate_id": cand["id"] if cand else None,
                                              "summary_json": summary}).eq("id", request_id).execute()
         out.update(status="done", card=card, candidate_id=cand["id"] if cand else None, summary=summary, item_id=sid)
+        pg.finish("done", f"{path} · 마진 {summary['margin_rate']}" if summary["margin_rate"] is not None else f"{path} · 후보 아님")
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
+        pg.finish("failed", err[:200])
         c.table("analysis_requests").update({"status": "failed", "error": err[:500]}).eq("id", request_id).execute()
         out.update(error=err, trace=traceback.format_exc()[-1500:])
     return out

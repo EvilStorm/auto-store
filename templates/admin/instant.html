@@ -1,18 +1,28 @@
 {% extends "base.html" %}{% block title %}즉시 분석{% endblock %}
 {% block body %}
+<style>
+  .nw { white-space: nowrap; } .muted { color: #888; } .bad-text { color: #B42318; }
+  .tag.run { background: #DDEBFF; }
+  .bar { height: 8px; background: #EEF0F4; border-radius: 4px; overflow: hidden; margin: .25rem 0; }
+  .bar .fill { height: 100%; background: #2B6CB0; transition: width .4s; }
+  .steps { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0; }
+  .st { font-size: .72rem; padding: .1rem .45rem; border-radius: 10px; background: #F3F4F6; color: #999; }
+  .st.done { background: #D9F2E3; color: #1B5E3A; } .st.failed { background: #FDECEC; color: #B42318; }
+  .st.running { background: #2B6CB0; color: #fff; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
+  .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; } .actions form { margin: 0; }
+</style>
 <h2>URL 즉시 분석 <small style="font-weight:400;color:#666">등록 소스(1688)는 AI 0회 · 미등록 사이트는 범용 LLM 추출(캐시) · 결과는 일반 후보와 같은 행</small></h2>
-<form method="post" action="/instant">
+<form method="post" action="/instant" id="add">
   <label>상품 URL (한 줄에 하나) <textarea name="urls" rows="4" placeholder="https://detail.1688.com/offer/XXXXXXXX.html"></textarea></label>
-  <button>큐에 추가</button>
 </form>
-<form method="post" action="/instant/process" class="inline"><button class="secondary">지금 처리 (큐 최대 5건 · 텔레그램 카드)</button></form>
-{% if jobs_instant %}<pre class="card" hx-get="/jobs/instant/log" hx-trigger="every 3s" hx-swap="innerHTML">로딩…</pre>{% endif %}
-<table>
-  <thead><tr><th>요청</th><th>입구</th><th>URL</th><th>상태</th><th>결과</th><th>결정</th><th>오류</th></tr></thead>
-  <tbody>{% for r in rows %}
-  <tr><td>{{ r.requested_at|ts }}</td><td>{{ r.channel }}</td><td><small>{{ r.url[:80] }}</small></td><td><span class="tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'failed' else '' }}">{{ r.status }}</span></td>
-    <td><small>{% if r.summary_json %}{{ r.summary_json.get('path') }} · 마진 {{ r.summary_json.get('margin_rate')|pct }} · 점수 {{ r.summary_json.get('score') or '-' }} · {{ r.summary_json.get('status') }}{% endif %}
-      {% if r.candidate_link %} · <a href="{{ r.candidate_link }}">후보 보기</a>{% endif %}</small></td><td>{{ r.decision }}</td><td><small>{{ r.error or '' }}</small></td></tr>
-  {% endfor %}</tbody>
-</table>
+<div class="actions">
+  <button form="add" name="run" value="1">추가하고 바로 분석</button>
+  <button form="add" class="outline">큐에만 추가</button>
+  <form method="post" action="/instant/process"><button class="secondary" {{ 'disabled' if jobs_instant else '' }}>{{ '처리 중…' if jobs_instant else '지금 처리 (대기 중인 큐 최대 5건)' }}</button></form>
+  {% if jobs_instant %}<small class="muted">처리기가 이 PC 에서 돌고 있습니다 — 텔레그램 토큰이 있으면 카드도 보냅니다</small>{% endif %}
+</div>
+<p class="muted" style="font-size:.8rem;margin:.4rem 0 .8rem">단계: 소스 판별 → (1688) 상세 수집 → 저장·정규화 → 국내 조회(네이버 검색 · 이미지 비교) → 원가·점수 → 카드. 1688 은 보통 1~2분, 미등록 사이트는 LLM 추출이 더해져 2~3분.</p>
+{% include "instant_rows.html" %}
+{% if jobs_instant %}<details style="margin-top:1rem"><summary>처리기 로그</summary><pre class="card" hx-get="/jobs/instant/log" hx-trigger="every 3s" hx-swap="innerHTML">로딩…</pre></details>{% endif %}
 {% endblock %}

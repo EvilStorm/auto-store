@@ -1,0 +1,34 @@
+{# 즉시 분석 표 본문 — /instant/rows 가 HTMX 폴링으로 갈아끼운다. active 가 꺼지면 폴링도 멈춘다 #}
+<div id="instant-rows" {% if active %}hx-get="/instant/rows" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+{% if active and not jobs_instant %}<p class="flash">대기 중인 요청이 있는데 이 PC 에서 처리기가 돌고 있지 않습니다 — "지금 처리" 를 누르거나 텔레그램 폴러(<code>app.telegram_poll</code>)가 가져갑니다.</p>{% endif %}
+<table>
+  <thead><tr><th class="nw">요청</th><th>입구</th><th>URL</th><th class="nw">상태</th><th style="min-width:360px">진행 · 결과</th><th>결정</th></tr></thead>
+  <tbody>{% for r in rows %}{% set p = r.progress_json or {} %}
+  <tr>
+    <td class="nw">{{ r.requested_at|ts }}</td><td>{{ r.channel }}</td>
+    <td><small><a href="{{ r.url }}" target="_blank">{{ r.url[:70] }}</a></small></td>
+    <td class="nw"><span class="tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'failed' else 'run' if r.status == 'running' else '' }}">{{ req_status_ko.get(r.status, r.status) }}</span></td>
+    <td>
+      {% if r.status in ('running', 'queued') %}
+        {% if r.status == 'queued' %}<small class="muted">순서 대기 중 — 앞의 요청이 끝나면 시작</small>{% endif %}
+        {% if p.steps %}
+        <div class="bar"><div class="fill" style="width:{{ p.pct or 2 }}%"></div></div>
+        <div class="steps">{% for s in p.steps %}<span class="st {{ s.status }}">{{ s.label }}{% if s.sec %} <small>{{ s.sec }}s</small>{% endif %}</span>{% endfor %}</div>
+        <small class="muted">{{ p.note or '' }} · {{ r.elapsed_now if r.elapsed_now is not none else (p.elapsed or 0) }}s 경과</small>
+        {% endif %}
+      {% elif r.status == 'done' %}
+        <small>{{ r.summary_json.get('path') }} · 마진 {{ r.summary_json.get('margin_rate')|pct }} · 점수 {{ r.summary_json.get('score') or '-' }} · {{ '이미 진행 중인 후보 → ' if r.summary_json.get('existing') else '' }}{{ status_ko.get(r.summary_json.get('status'), r.summary_json.get('status')) if r.summary_json.get('status') != 'no_candidate' else '후보 아님 (제외 ' ~ (r.summary_json.get('excluded_reason') or '사유 없음') ~ ')' }}
+          {% if r.candidate_link %} · <a href="{{ r.candidate_link }}">후보 보기</a>{% endif %}
+          {% if p.elapsed %} · <span class="muted">{{ p.elapsed }}s</span>{% endif %}</small>
+        {% if p.steps %}<details><summary class="muted" style="font-size:.75rem">단계별 시간</summary><div class="steps">{% for s in p.steps %}<span class="st {{ s.status }}">{{ s.label }}{% if s.sec %} <small>{{ s.sec }}s</small>{% endif %}</span>{% endfor %}</div></details>{% endif %}
+      {% elif r.status == 'failed' %}
+        {% if p.steps %}<div class="steps">{% for s in p.steps %}<span class="st {{ s.status }}">{{ s.label }}</span>{% endfor %}</div>{% endif %}
+        <small class="bad-text">{{ r.error or '' }}</small>
+      {% endif %}
+    </td>
+    <td>{{ r.decision if r.decision != 'none' else '-' }}</td>
+  </tr>
+  {% endfor %}</tbody>
+</table>
+{% if not rows %}<p class="muted">아직 요청이 없습니다.</p>{% endif %}
+</div>

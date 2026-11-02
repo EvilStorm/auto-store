@@ -559,40 +559,33 @@ def logs(request: Request):
     return page(request, "logs.html", profile=prof, rows=rows)
 
 
-@app.get("/instant", response_class=HTMLResponse)
-def instant(request: Request):
-    c, uid, prof = get_client()
-    if c is None:
-        return need_login(request)
+REQ_STATUS_KO = {"queued": "대기", "running": "진행 중", "done": "완료", "failed": "실패", "unsupported_source": "미지원 소스", "fetched": "읽기만"}
+
+
+def _instant_rows(c) -> tuple[list[dict], bool]:
     rows = c.table("analysis_requests").select("*").order("requested_at", desc=True).limit(50).execute().data
+    now = datetime.now(timezone.utc)
     for r in rows:
         if r.get("candidate_id"):
             r["candidate_link"] = f"/candidates/{r['candidate_id']}"
+        if r["status"] == "running":                    # progress_json.elapsed 는 단계가 바뀔 때만 갱신되므로 폴링마다 서버에서 다시 센다
+            try:
+                r["elapsed_now"] = int((now - datetime.fromisoformat(r["requested_at"].replace("Z", "+00:00"))).total_seconds())
+            except Exception:
+                r["elapsed_now"] = None
+    active = any(r["status"] in ("queued", "running") for r in rows)
+    return rows, active
+
+
+def _instant_job_running() -> bool:
     j = JOBS.get("instant")
-    return page(request, "instant.html", profile=prof, rows=rows, jobs_instant=bool(j and j["proc"].poll() is None))
+    return bool(j and j["proc"].poll() is None)
 
 
-@app.post("/instant")
-def instant_add(request: Request, urls: str = Form(...)):
-    c, uid, prof = get_client()
-    if c is None:
-        return need_login(request)
-    n = 0
-    for u in [x.strip() for x in urls.splitlines() if x.strip().startswith("http")][:20]:
-        c.table("analysis_requests").insert({"user_id": uid, "channel": "web", "url": u, "status": "queued"}).execute()
-        n += 1
-    return RedirectResponse(f"/instant?m={n}건 큐에 추가 — '지금 처리' 를 누르거나 텔레그램 폴러가 돌고 있으면 자동", status_code=303)
-
-
-@app.post("/instant/process")
-def instant_process(request: Request):
+def _start_instant_job() -> str:
     """큐를 서브프로세스로 처리 (대시보드 배치 버튼과 같은 방식). 텔레그램 토큰이 있으면 카드도 보낸다."""
-    c, uid, prof = get_client()
-    if c is None:
-        return need_login(request)
-    j = JOBS.get("instant")
-    if j and j["proc"].poll() is None:
-        return RedirectResponse("/instant?m=이미 처리 중", status_code=303)
+    if _instant_job_running():
+        return "이미 처리 중"
     logdir = settings.data_dir / "logs"
     logdir.mkdir(parents=True, exist_ok=True)
     logf = logdir / f"instant-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
@@ -600,7 +593,48 @@ def instant_process(request: Request):
     env = {**dict(__import__("os").environ), "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.Popen([sys.executable, "-m", "app.instant", "--queue", "--limit", "5", "--telegram"], cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, env=env)
     JOBS["instant"] = {"proc": proc, "log": logf, "started": datetime.now().strftime("%H:%M:%S"), "fh": fh}
-    return RedirectResponse("/instant?m=처리 시작 (대시보드에서 로그 확인)", status_code=303)
+    return "처리 시작"
+
+
+@app.get("/instant", response_class=HTMLResponse)
+def instant(request: Request):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    rows, active = _instant_rows(c)
+    return page(request, "instant.html", profile=prof, rows=rows, active=active, jobs_instant=_instant_job_running(), req_status_ko=REQ_STATUS_KO, status_ko=STATUS_KO)
+
+
+@app.get("/instant/rows", response_class=HTMLResponse)
+def instant_rows(request: Request):
+    """표 본문만 (HTMX 폴링). 진행 중인 요청이 없어지면 폴링을 멈추도록 active 를 같이 내려준다."""
+    c, uid, prof = get_client()
+    if c is None:
+        return HTMLResponse("")
+    rows, active = _instant_rows(c)
+    return page(request, "instant_rows.html", profile=prof, rows=rows, active=active, jobs_instant=_instant_job_running(), req_status_ko=REQ_STATUS_KO, status_ko=STATUS_KO)
+
+
+@app.post("/instant")
+def instant_add(request: Request, urls: str = Form(...), run: str = Form("")):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    n = 0
+    for u in [x.strip() for x in urls.splitlines() if x.strip().startswith("http")][:20]:
+        c.table("analysis_requests").insert({"user_id": uid, "channel": "web", "url": u, "status": "queued"}).execute()
+        n += 1
+    if run and n:
+        return RedirectResponse(f"/instant?m={n}건 추가 · {_start_instant_job()}", status_code=303)
+    return RedirectResponse(f"/instant?m={n}건 큐에 추가 — '지금 처리' 를 누르거나 텔레그램 폴러가 돌고 있으면 자동", status_code=303)
+
+
+@app.post("/instant/process")
+def instant_process(request: Request):
+    c, uid, prof = get_client()
+    if c is None:
+        return need_login(request)
+    return RedirectResponse(f"/instant?m={_start_instant_job()}", status_code=303)
 
 
 # ───────────────────────── 등록 완료 · 감시 ─────────────────────────
