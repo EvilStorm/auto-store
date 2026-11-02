@@ -20,6 +20,7 @@ from app import auth, repo
 from app.config import ROOT, settings
 from app.db import NotLoggedIn, current_user_id, pc_name, user_client
 from app.pipeline.notify import FLAG_KO
+from jinja2 import Undefined
 
 app = FastAPI(title="auto-store 관리자", docs_url=None, redoc_url=None)
 templates = Jinja2Templates(directory=str(ROOT / "templates" / "admin"))
@@ -35,7 +36,17 @@ COST_KO = [("currency", "통화"), ("rate_krw", "환율(원)"), ("unit_price_src
            ("proxy_fee_krw", "대리구매 수수료"), ("forwarder_krw", "배대지 요금"), ("customs_krw", "관부가세"), ("naver_fee_krw", "네이버 수수료"), ("payment_fee_krw", "결제 수수료"),
            ("fx_buffer_krw", "환차손 완충"), ("total_cost_krw", "총원가"), ("taxable_usd", "과세가격(USD)"), ("weight_g", "무게(g)")]
 FLAG_SHORT = {"weight_unknown": "무게 미확인", "near_customs_limit": "과세 경계", "over_customs_limit": "관부가세", "rate_stale": "환율 오래됨", "requirement_needed": "요건 필요",
-              "requirement_unknown": "요건 미확정", "brand_detected": "브랜드 감지", "price_is_reference": "참고가", "few_matches": "비교 1~2건", "no_domestic_price": "비교가 없음", "weight_estimated": "무게 추정"}
+              "requirement_unknown": "요건 미확정", "brand_detected": "브랜드 감지", "price_is_reference": "참고가", "few_matches": "비교 1~2건", "no_domestic_price": "비교가 없음", "weight_estimated": "무게 추정",
+              "excluded:brand_text": "제외: 브랜드", "excluded:rejected_before": "제외: 거절 이력", "excluded:already_listed": "등록 진행 중"}
+def flag_label(f: str, table: dict | None = None) -> str:
+    t = table or FLAG_KO
+    if f in t:
+        return t[f]
+    if f.startswith("excluded:"):
+        return ("제외: " if table is FLAG_SHORT else "배치면 제외: ") + f.split(":", 1)[1]
+    return f
+
+
 RELATION_KO = {"exact": "정확 (같은 상품)", "similar": "유사 (같은 종류 · 참고가)", "unrelated": "무관 (임계값 미만)"}
 def cost_sections_for(b: dict, item: dict, domestic: int | None) -> list[dict]:
     """총원가를 '어디서 얼마가 붙었나' 로 읽히게 섹션별 행으로. 비율은 설정값이 아니라 저장된 금액에서 역산 (그때 적용된 값 그대로)."""
@@ -114,13 +125,19 @@ def need_login(request: Request):
     return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
 
 
+def _blank(v) -> bool:
+    return v is None or isinstance(v, Undefined)   # market_signals 행이 없는 후보(즉시 분석 force) 는 sig.xxx 가 Undefined
+
+
 def _won(v):
-    return "-" if v is None else f"{int(v):,}원"
+    return "-" if _blank(v) else f"{int(v):,}원"
 
 
 templates.env.filters["won"] = _won
 templates.env.filters["img"] = lambda u: ("/img?u=" + __import__("urllib.parse").parse.quote(u, safe="")) if u else ""
-templates.env.filters["pct"] = lambda v: "-" if v is None else f"{float(v) * 100:.0f}%"
+templates.env.filters["flagko"] = flag_label
+templates.env.filters["flagshort"] = lambda f: flag_label(f, FLAG_SHORT)
+templates.env.filters["pct"] = lambda v: "-" if _blank(v) else f"{float(v) * 100:.0f}%"
 templates.env.filters["ts"] = lambda v: (v or "")[:16].replace("T", " ")
 
 

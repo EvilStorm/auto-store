@@ -142,7 +142,7 @@ def _lookup_and_score(c, uid: str, sid: int, item: dict, n_row: dict, progress=N
     domestic.lookup(c, item, n_row, naver_profile_dir=prof if prof.exists() else None)
     if progress:
         progress.step("score")
-    scoring.run(c, uid, only_item=sid, origin="instant")
+    scoring.run(c, uid, only_item=sid, origin="instant", force=True)
     rows = c.table("candidates").select("*").eq("source_item_id", sid).eq("run_date", date.today().isoformat()).limit(1).execute().data
     if rows:
         return rows[0]

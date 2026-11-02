@@ -25,6 +25,8 @@ FLAG_KO = {
     "over_customs_limit": "150달러 초과 → 관부가세 반영", "rate_stale": "환율이 오래됨", "requirement_needed": "요건 필요 (KC 등)",
     "requirement_unknown": "요건 미확정", "brand_detected": "브랜드 텍스트 감지", "price_is_reference": "국내가는 유사 상품 기준(참고치)",
     "few_matches": "비교 상품 1~2건뿐 (가격 신뢰 낮음)", "no_domestic_price": "국내 비교 상품 없음", "weight_estimated": "무게는 카테고리 기본값(추정)",
+    # 즉시 분석(force)에서 배치라면 건너뛰었을 사유 — 결과는 보여주되 이유를 남긴다
+    "excluded:brand_text": "배치면 제외: 브랜드 텍스트 감지", "excluded:rejected_before": "배치면 제외: 최근 거절한 상품", "excluded:already_listed": "이미 등록 진행 중",
 }
 
 

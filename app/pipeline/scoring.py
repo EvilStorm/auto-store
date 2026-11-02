@@ -205,7 +205,8 @@ def _excluded_by_me(norm: dict, item: dict, rules: list[dict], rejections: list[
     return None
 
 
-def run(c, user_id: str, *, only_item: int | None = None, run_date: date | None = None, origin: str = "batch") -> dict:
+def run(c, user_id: str, *, only_item: int | None = None, run_date: date | None = None, origin: str = "batch", force: bool = False) -> dict:
+    """force: 즉시 분석용 — 제외 규칙·브랜드·요건 때문에 건너뛸 항목도 후보 행을 만들고 사유를 flags 에 남긴다(이미 등록 진행 중인 건은 제외). 조회 결과가 없어도 원가만 계산."""
     from app.adapters.exchange_rate import get_rates
     from app.taxonomy import dictionary
 
@@ -223,6 +224,8 @@ def run(c, user_id: str, *, only_item: int | None = None, run_date: date | None 
     if only_item:
         q = q.eq("source_item_id", only_item)
     signals = q.execute().data
+    if not signals and only_item and force:
+        signals = [{"source_item_id": only_item, "_none": True}]      # 국내 조회 결과가 없어도 원가·플래그는 보여준다
     ids = [s["source_item_id"] for s in signals]
     if not ids:
         return {"scored": 0}
@@ -236,24 +239,34 @@ def run(c, user_id: str, *, only_item: int | None = None, run_date: date | None 
     for sig in signals:
         sid = sig["source_item_id"]
         item, norm = items.get(sid), norms.get(sid)
-        if not item or not norm or norm.get("excluded_reason"):
+        if not item or not norm:
             out["skipped"] += 1
             continue
+        extra_flags: list[str] = []
+        if norm.get("excluded_reason"):
+            if not force:
+                out["skipped"] += 1
+                continue
+            extra_flags.append(f"excluded:{norm['excluded_reason']}")
         ex = existing.get(sid)
         if ex and ex["status"] not in ("candidate", "below_margin"):
             out["skipped"] += 1   # 이미 결정된 후보는 다시 점수 내지 않음
             continue
-        if _excluded_by_me(norm, item, rules, rejections, listed):
-            out["excluded"] += 1
-            continue
+        why = _excluded_by_me(norm, item, rules, rejections, listed)
+        if why:
+            if not force or why == "already_listed":
+                out["excluded"] += 1
+                continue
+            extra_flags.append(f"excluded:{why}")
         cat = d.categories.get(norm.get("canonical_category_id") or "")
         detail_w = (details.get(sid) or {}).get("package_weight_g")
         weight = float(detail_w or (cat.default_weight_g if cat else 0) or 0)
         weight_source = "detail" if detail_w else ("category_default" if weight > 0 else "unknown")
         status, _ = d.requirement(norm.get("item_type") or "general")
         sp = prof_by_id.get((us.get(item["source_id"]) or {}).get("shipping_profile_id"))
-        econ = compute_economics(item, sig, rates, weight_g=weight, requirement_status=status, brand_hit=bool(norm.get("brand_text_hit")),
+        econ = compute_economics(item, None if sig.get("_none") else sig, rates, weight_g=weight, requirement_status=status, brand_hit=bool(norm.get("brand_text_hit")),
                                  shipping_profile=sp, weight_source=weight_source)
+        econ.flags = list(dict.fromkeys(econ.flags + extra_flags))
         st = "candidate" if (econ.margin_rate is not None and econ.margin_rate >= settings.margin_threshold) else "below_margin"
         out[st] += 1
         out["scored"] += 1

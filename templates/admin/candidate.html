@@ -49,7 +49,7 @@
       <article><div class="v">{{ sig.review_top or '-' }}</div><div class="l">리뷰 최대 · 찜 {{ sig.wish_top or '-' }}</div></article>
       <article><div class="v">{{ sig.same_image_sellers if sig.same_image_sellers is not none else '-' }}</div><div class="l">동일 사진 판매자 · 판매처 최대 {{ sig.seller_count_max or '-' }}</div></article>
     </div>
-    {% if cand.flags %}<p>{% for f in cand.flags %}<span class="tag warn">{{ flag_ko.get(f, f) }}</span>{% endfor %}</p>{% endif %}
+    {% if cand.flags %}<p>{% for f in cand.flags %}<span class="tag warn">{{ f|flagko }}</span>{% endfor %}</p>{% endif %}
     <div class="actions">
       {% if cand.status in ('candidate', 'held', 'below_margin') %}
       <form method="post" action="/candidates/{{ cand.id }}/approve" class="inline"><button>승인 → 상세 수집 · 콘텐츠</button></form>
